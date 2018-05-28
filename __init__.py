@@ -77,7 +77,7 @@ class _data(_c.Structure):
     ] # End of _data structure
 
 
-class macrospin():
+class solver():
     """
     Class for interfacing with the macrospin simulation c-library.
     
@@ -396,7 +396,7 @@ class macrospin():
         
         return self
     
-    def solve(self, **kwargs):
+    def run(self, **kwargs):
         """
         Creates the solution arrays and runs the solver, which updates the 
         dynamic quantities, and stores the free layer trajectory in 
@@ -428,17 +428,17 @@ if __name__ == '__main__':
 
     import spinmob as sm
     
-    m = macrospin(steps=1000).solve()
+    m = solver(steps=1000).run()
     sm.plot.xy.data(_n.linspace(m['t0'],m['t0']+(m['steps']-1)*m['dt'], m['steps']), 
                     [m.solution_mx, m.solution_my, m.solution_mz], label=['mx','my','mz'],
                     xlabel= "Time (ns)", ylabel="Magnetization Unit Vector", clear=0)
     
-    m.solve()
+    m.run()
     sm.plot.xy.data(_n.linspace(m['t0'],m['t0']+(m['steps']-1)*m['dt'], m['steps']), 
                     [m.solution_mx, m.solution_my, m.solution_mz], label=['mx','my','mz'],
                     xlabel= "Time (ns)", ylabel="Magnetization Unit Vector", clear=0)
     
-    m.solve()
+    m.run()
     sm.plot.xy.data(_n.linspace(m['t0'],m['t0']+(m['steps']-1)*m['dt'], m['steps']), 
                     [m.solution_mx, m.solution_my, m.solution_mz], label=['mx','my','mz'],
                     xlabel= "Time (ns)", ylabel="Magnetization Unit Vector", clear=0)
