@@ -1,0 +1,10 @@
+*.pyc
+.SyncID
+.SyncIgnore
+.SyncArchive/
+/.project
+build/
+dist/
+Spinmob.egg*/
+*.cfg
+gui_settings/
