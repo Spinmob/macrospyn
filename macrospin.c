@@ -251,6 +251,28 @@ void Solve_Huen(DATA *d)
 
 
 
+  
+  // Initial normalization of all unit vectors
+  norminator = 1.0/sqrt(d->mx*d->mx 
+                      + d->my*d->my 
+                      + d->mz*d->mz);
+  d->mx = d->mx*norminator;
+  d->my = d->my*norminator;
+  d->mz = d->mz*norminator;
+  
+  norminator = 1.0/sqrt(d->Mx*d->Mx 
+                      + d->My*d->My 
+                      + d->Mz*d->Mz);
+  d->Mx = d->Mx*norminator;
+  d->My = d->My*norminator;
+  d->Mz = d->Mz*norminator;  
+    
+  norminator = 1.0/sqrt(d->Bx_hat*d->Bx_hat 
+                      + d->By_hat*d->By_hat 
+                      + d->Bz_hat*d->Bz_hat);
+  d->Bx_hat = d->Bx_hat*norminator;
+  d->By_hat = d->By_hat*norminator;
+  d->Bz_hat = d->Bz_hat*norminator;
 
 
 
