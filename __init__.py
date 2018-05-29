@@ -426,21 +426,29 @@ class solver():
 
 if __name__ == '__main__':
 
-    import spinmob as sm
+    import pylab
     
-    m = solver(steps=1000).run()
-    sm.plot.xy.data(_n.linspace(m['t0'],m['t0']+(m['steps']-1)*m['dt'], m['steps']), 
-                    [m.solution_mx, m.solution_my, m.solution_mz], label=['mx','my','mz'],
-                    xlabel= "Time (ns)", ylabel="Magnetization Unit Vector", clear=0)
+    # Create the solver object, and initialize the magnetization
+    m = solver(steps=2000).set_angles(m_theta=45)
+    
+    # Get a time-domain array
+    t = _n.linspace(m['t0'],m['t0']+(m['steps']-1)*m['dt'], m['steps'])
+    
+    # Run the solver.
+    m.run()
+    pylab.plot(t, m.solution_mx, label='mx')
+    pylab.plot(t, m.solution_my, label='my')
+    pylab.plot(t, m.solution_mz, label='mz')
+    
+    # Get a time-domain array
+    t = _n.linspace(m['t0'],m['t0']+(m['steps']-1)*m['dt'], m['steps'])
     
     m.run()
-    sm.plot.xy.data(_n.linspace(m['t0'],m['t0']+(m['steps']-1)*m['dt'], m['steps']), 
-                    [m.solution_mx, m.solution_my, m.solution_mz], label=['mx','my','mz'],
-                    xlabel= "Time (ns)", ylabel="Magnetization Unit Vector", clear=0)
+    pylab.plot(t, m.solution_mx, label='mx')
+    pylab.plot(t, m.solution_my, label='my')
+    pylab.plot(t, m.solution_mz, label='mz')
     
-    m.run()
-    sm.plot.xy.data(_n.linspace(m['t0'],m['t0']+(m['steps']-1)*m['dt'], m['steps']), 
-                    [m.solution_mx, m.solution_my, m.solution_mz], label=['mx','my','mz'],
-                    xlabel= "Time (ns)", ylabel="Magnetization Unit Vector", clear=0)
-    
+    pylab.legend()
+    pylab.xlabel('Time (ns)')
+    pylab.ylabel('Magnetization')
     
