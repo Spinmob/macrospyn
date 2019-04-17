@@ -52,8 +52,8 @@ typedef struct DATA
   double hall_angle;  // Conversion from charge to spin current density (also having units of "Amps/m^2"
   double g_factor;    // Electron g-factor (2, usually)
   double efficiency;  // number of hbar/2's each electron imparts (at most)
-  double gyromagnetic_magnitude; // 8.794033700300592e10*d->g_factor gyromagnetic ratio magnitude (rad / s T)  
-  
+  double gyromagnetic_magnitude; // 8.794033700300592e10*d->g_factor gyromagnetic ratio magnitude (rad / s T)
+
   // Current drive I(t) = I0 + I1*cos(2*PI*f1*t)
   double I0;        // DC current (mA)
   double I1;        // RF amplitude (mA)
@@ -154,6 +154,8 @@ double Beta(DATA *d) // spin transfer coefficient (depends on m's)
            // Note ms is in Tesla, so there is that extra u0
 	   d->efficiency*d->g_factor*uB*u0/(2*EC*d->thickness_fm*1e-9*d->ms)
 	   );
+  else
+    return(0);
   // For other torque types (if I re-add them), this can depend on the magnetizations
 }
 
@@ -251,24 +253,24 @@ void Solve_Huen(DATA *d)
 
 
 
-  
+
   // Initial normalization of all unit vectors
-  norminator = 1.0/sqrt(d->mx*d->mx 
-                      + d->my*d->my 
+  norminator = 1.0/sqrt(d->mx*d->mx
+                      + d->my*d->my
                       + d->mz*d->mz);
   d->mx = d->mx*norminator;
   d->my = d->my*norminator;
   d->mz = d->mz*norminator;
-  
-  norminator = 1.0/sqrt(d->Mx*d->Mx 
-                      + d->My*d->My 
+
+  norminator = 1.0/sqrt(d->Mx*d->Mx
+                      + d->My*d->My
                       + d->Mz*d->Mz);
   d->Mx = d->Mx*norminator;
   d->My = d->My*norminator;
-  d->Mz = d->Mz*norminator;  
-    
-  norminator = 1.0/sqrt(d->Bx_hat*d->Bx_hat 
-                      + d->By_hat*d->By_hat 
+  d->Mz = d->Mz*norminator;
+
+  norminator = 1.0/sqrt(d->Bx_hat*d->Bx_hat
+                      + d->By_hat*d->By_hat
                       + d->Bz_hat*d->Bz_hat);
   d->Bx_hat = d->Bx_hat*norminator;
   d->By_hat = d->By_hat*norminator;

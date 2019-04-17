@@ -1,11 +1,12 @@
 import ctypes as _c
 import numpy  as _n
 import os     as _os
+from sys import platform as _platform
 
 
-
-# Find the path to the compiled c-code
-_path_dll = _os.path.join(_os.path.split(__file__)[0],'macrospin.so')
+# Find the path to the compiled c-code (only Windows and Linux supported so far.)
+if _platform in ['win32']: _path_dll = _os.path.join(_os.path.split(__file__)[0],'macrospin.dll')
+else:                      _path_dll = _os.path.join(_os.path.split(__file__)[0],'macrospin.so')
 
 class _data(_c.Structure):
     """
@@ -423,6 +424,7 @@ class solver():
         self._macrospin.Solve_Huen(_c.byref(self.data))
         
         return self
+
 
 
 if __name__ == '__main__':
