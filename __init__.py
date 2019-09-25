@@ -280,11 +280,11 @@ class solver():
         s = s+"  damping        = %0.5G (unitless)\n" % self['damping']
         s = s+"\n"
         
-        s = s+"  torque_type            = %i\n"    % self['torque_type']
-        s = s+"  hall_angle             = %0.5G\n" % self['hall_angle']
-        s = s+"  g_factor               = %0.5G\n" % self['g_factor']
-        s = s+"  efficiency             = %0.5G\n" % self['efficiency']
-        s = s+"  gyromagnetic_magnitude = %0.5G\n" % self['gyromagnetic_magnitude']
+        s = s+"  torque_type            = %i (integer)\n"    % self['torque_type']
+        s = s+"  hall_angle             = %0.5G (unitless)\n" % self['hall_angle']
+        s = s+"  g_factor               = %0.5G (unitless)\n" % self['g_factor']
+        s = s+"  efficiency             = %0.5G (unitless)\n" % self['efficiency']
+        s = s+"  gyromagnetic_magnitude = %0.5G radians / second Tesla\n" % self['gyromagnetic_magnitude']
         s = s+"\n"
         
         s = s+"  I0        = %0.5G mA\n" % self['I0']
