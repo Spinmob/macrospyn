@@ -277,7 +277,7 @@ class solver():
         s = s+"  ms             = %0.5G T\n" % self['ms']
         s = s+"  Byx            = %0.5G T\n" % self['Byx']
         s = s+"  Bzx            = %0.5G T\n" % self['Bzx']
-        s = s+"  damping        = %0.5G K\n" % self['damping']
+        s = s+"  damping        = %0.5G (unitless)\n" % self['damping']
         s = s+"\n"
         
         s = s+"  torque_type            = %i\n"    % self['torque_type']
