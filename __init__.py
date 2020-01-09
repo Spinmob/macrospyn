@@ -14,63 +14,64 @@ class _data(_c.Structure):
     """
     _fields_ = [
         # Physical system
-        ('time_scale',     _c.c_double), # 1e-9 for nanoseconds
-        ('T',              _c.c_double), # Temperature (K)
-        ('thickness_fm',   _c.c_double), # Thickness of ferromagnetic layer (nm)
-        ('thickness_nm',   _c.c_double), # Thickness of normal metal (nm)
-        ('resistivity_fm', _c.c_double), # Resistivity of ferromagnet (Ohm/m^2)
-        ('resistivity_nm', _c.c_double), # Resistivity of normal metal (Ohm/m^2)
-        ('length',         _c.c_double), # Length along x (nm)
-        ('width',          _c.c_double), # Width along y (nm)
-        ('ms',             _c.c_double), # Saturation magnetization (T) used only for spin transfer efficiency and Langevin
-        ('Byx',            _c.c_double), # In-plane anisotropy (T)
-        ('Bzx',            _c.c_double), # Out-of-plane anisotropy (T)
-        ('damping',        _c.c_double), # Gilber damping (unitless)
-    
-        # Torque stuff
-        ('torque_type',    _c.c_int),    # 1 for spin Hall, 2 for sinusoid
-        ('hall_angle',     _c.c_double), # Conversion from charge to spin current density (which also has units of "Amps/m^2")
-        ('g_factor',       _c.c_double), # 1e-9 for nanoseconds
-        ('efficiency',     _c.c_double), # 1e-9 for nanoseconds
-        ('gyromagnetic_magnitude', _c.c_double), # Magnitude of the gyromagnetic ratio, nominally 8.794033700300592e10*d->g_factor (rad / s T)
-        
-        # Current drive
-        ('I0',             _c.c_double), # DC current (mA)
-        ('I1',             _c.c_double), # AC amplitude (mA)
-        ('f1',             _c.c_double), # AC frequency (GHz)
-        ('Bx_per_mA',      _c.c_double), # Conversion from current to field (T/mA)
-        ('By_per_mA',      _c.c_double),
-        ('Bz_per_mA',      _c.c_double),
-    
-        # Applied field
-        ('B0',             _c.c_double), # DC field (T)
-        ('Bx_hat',         _c.c_double), # Unit vector components
-        ('By_hat',         _c.c_double),
-        ('Bz_hat',         _c.c_double),
-        
+        ('Byx1',           _c.c_double), # In-plane anisotropy, element 1 (T)
+        ('Bzx1',           _c.c_double), # Out-of-plane anisotropy, element 1 (T)
+        ('Byx2',           _c.c_double), # In-plane anisotropy, element 2 (T)
+        ('Bzx2',           _c.c_double), # Out-of-plane anisotropy, element 2 (T)
+        ('Bex1',           _c.c_double), # Exchange-like field felt by element 1 from element 2 (T)
+        ('Bex2',           _c.c_double), # Exchange-like field felt by elemnet 2 from element 1 (T)
+        ('damping1',       _c.c_double), # Gradient damping, element 1 (unitless)
+        ('damping2',       _c.c_double), # Gradient damping, element 2 (unitless)    
+        ('g0',             _c.c_double), # Magnitude of the gyromagnetic ratio, nominally 8.794033700300592e10*g_factor (rad / s T)
+            
         # Solver stuff
-        ('steps',  _c.c_int),    # Number of steps
-        ('t0',     _c.c_double), # Solver starting time (nanoseconds if time_scale=1e-9)
-        ('dt',     _c.c_double), # Solver time step
+        ('steps',          _c.c_int),    # Number of steps
+        ('dt',             _c.c_double), # Time step (seconds)
         
-        # Instantaneous values (don't mess with)
-        ('n',   _c.c_int),
-        ('mx',  _c.c_double),
-        ('my',  _c.c_double),
-        ('mz',  _c.c_double),
-        ('Mx',  _c.c_double),
-        ('My',  _c.c_double),
-        ('Mz',  _c.c_double),
-        ('Bx',  _c.c_double),
-        ('By',  _c.c_double),
-        ('Bz',  _c.c_double),
-        ('I',   _c.c_double),
-        ('Js',  _c.c_double),
+        # User-supplied arrays
+        ("applied_Bx1", _c.POINTER(_c.c_double)),
+        ("applied_By1", _c.POINTER(_c.c_double)),
+        ("applied_Bz1", _c.POINTER(_c.c_double)),
+        ("applied_Bx2", _c.POINTER(_c.c_double)),
+        ("applied_By2", _c.POINTER(_c.c_double)),
+        ("applied_Bz2", _c.POINTER(_c.c_double)),
+        
+        ("applied_tx1", _c.POINTER(_c.c_double)),
+        ("applied_ty1", _c.POINTER(_c.c_double)),
+        ("applied_tz1", _c.POINTER(_c.c_double)),
+        ("applied_tx2", _c.POINTER(_c.c_double)),
+        ("applied_ty2", _c.POINTER(_c.c_double)),
+        ("applied_tz2", _c.POINTER(_c.c_double)),
         
         # Solution arrays
-        ("solution_mx", _c.POINTER(_c.c_double)),
-        ("solution_my", _c.POINTER(_c.c_double)),
-        ("solution_mz", _c.POINTER(_c.c_double)),
+        ("Bx1", _c.POINTER(_c.c_double)),
+        ("By1", _c.POINTER(_c.c_double)),
+        ("Bz1", _c.POINTER(_c.c_double)),
+        ("Bx2", _c.POINTER(_c.c_double)),
+        ("By2", _c.POINTER(_c.c_double)),
+        ("Bz2", _c.POINTER(_c.c_double)),
+        
+        ("tx1", _c.POINTER(_c.c_double)),
+        ("ty1", _c.POINTER(_c.c_double)),
+        ("tz1", _c.POINTER(_c.c_double)),
+        ("tx2", _c.POINTER(_c.c_double)),
+        ("ty2", _c.POINTER(_c.c_double)),
+        ("tz2", _c.POINTER(_c.c_double)),
+        
+        ("mx1", _c.POINTER(_c.c_double)),
+        ("my1", _c.POINTER(_c.c_double)),
+        ("mz1", _c.POINTER(_c.c_double)),
+        ("mx2", _c.POINTER(_c.c_double)),
+        ("my2", _c.POINTER(_c.c_double)),
+        ("mz2", _c.POINTER(_c.c_double)),
+        
+        # Internal values used by solver
+        ('dmx1', _c.c_double), # Time step (seconds)
+        ('dmy1', _c.c_double), # Time step (seconds)
+        ('dmz1', _c.c_double), # Time step (seconds)
+        ('dmx2', _c.c_double), # Time step (seconds)
+        ('dmy2', _c.c_double), # Time step (seconds)
+        ('dmz2', _c.c_double), # Time step (seconds)
         
         # Bureaucracy
         ("log_level",   _c.c_int)
@@ -89,117 +90,50 @@ class solver():
     
     T = 0 (Kelvin)
         Temperature used for Langevin field.
-
-    length = 6000 (nanometers)
-        Length (along x) of all device layers. 
-        
-    width = 500 (nanometers)
-        Width (along y) of all device layers. 
-
-    thickness_nm = 10 (nanometers)
-        Thickness (along z) of a normal metal film on top of the 
-        ferromagnetic film. This, combined with the layer resistivities, 
-        is used only to convert mA of current into transverse spin current 
-        in the spin Hall torque mode (torque_type=1).    
     
-    thickness_fm = 10 (nanometers)
-        Thickness (along z) of the "free layer" ferromagnet.
-            
-    ms = 0.8 (Tesla)
-        Saturation magnetization of the "free layer" ferromagnet. 
-    
-    Byx = 0.005 (Tesla)
-        Coercive field along the y direction. Nominally equal to
+    Byx1, Byx2 = 0.005 (Tesla)
+        Coercive field along the y direction for each magnetic element. Nominally equal to
         ms*(Nyy-Nxx), where Nxx+Nyy+Nzz = 1 are the elements of the (assumed
         diagonal) demagnetization tensor.
         
-    Bzx = 0.8 (Tesla)
-        Coercive field along the z-direction. Nominally equal to
+    Bzx1, Bzx2 = 0.8 (Tesla)
+        Coercive field along the z-direction for each magnetic volume. Nominally equal to
         ms*(Nzz-Nxx).
         
-    damping = 0.02 (unitless)
+    Bex1, Bex2 = 0 (Tesla)
+        Exchange-like field experienced by elements 1 and 2, respectively, 
+        parallel to magnetizations 2 and 1, respectively.
+        
+    damping1, damping2 = 0.02 (unitless)
         Gradient damping parameter. The Gilbert damping parameter
         works here, but the exact direction of the torque may be slightly 
         different. This difference is small if damping << 1.
 
-    resistivity_fm = 65.2 (units not needed)
-        Resistivity of the ferromagnetic film. Only the 
-        ratio of resistivities matters for determining the spin Hall torque.
-        
-    resistivity_nm = 21.9 (units not needed)
-        Resistivity of the normal metal film. Only the 
-        ratio of resistivities matters for determining the spin Hall torque.
-            
-    torque_type = 1 (flag)
-        How to convert current (mA) into torque. 1=spin Hall (current along x), 
-        2=sinusoidal (current along z).
-        
-    hall_angle = 0.05 (unitless)
-        Spin Hall angle for torque_type=1.
-        
-    g_factor = 2.002319 (unitless)
-        Electron g-factor, used only to calculate spin torque efficiency. 
+    g1, g2 = 176084607648.0 (radians / second Tesla)
+        Magnitude of the gyromagnetic ratio for each magnetic element.
     
-    efficiency = 1.0 (unitless)
-        Fraction of maximum per-electron spin transfer torque that is actually
-        applied to the free layer.
-    
-    gyromagnetic_magnitude = 176084607648.0 (radians / second Tesla)
-        Magnitude of the gyromagnetic ratio
-    
-    I0 = 0.0 (milliamps)
-        DC bias.
-        
-    I1 = 0.0 (milliamps)
-        RF current amplitude.
-        
-    f1 = 2.0 (Hertz scaled by time_scale)
-        RF current frequency.
-        
-    Bx_per_mA = 0.0, By_per_mA = 0.0, Bz_per_mA = 0.0  (Tesla/milliamp)
-        How much field in the x, y, and z directions are applied per milliamp
-        of current.
-    
-    B0 = 0.02 (Tesla)
-        Static applied field magnitude
-        
-    Bx_hat = 0, By_hat = 1, Bz_hat = 0 (unitless)
-        Unit vector direction of applied field.
-        
-    mx = 1, my = 0, mz = 0 (unitless)
-        Unit vector direction of the free layer magnetization.
-    
-    Mx = 0, My = 1, Mz = 0 (unitless)
-        Unit vector direction of the fixed layer magnetization. Not used for
-        spin Hall torque (torque_type=1).
-    
-    log_level = 0 (flag)
-        How much information to include in the log output. This is mostly for
-        Jack to mess with, and won't produce reliable results.
-        
     steps = 10000
         How many time steps per simulation.
     
-    t0 = 0 (seconds scaled by time_scale)
-        Starting time of simulation. Used, e.g., to calculate the RF current.
-        
-    dt = 0.0005 ( scaled by time_scale)
+    dt = 0.0005e-9 (seconds)
         Time step.
         
-    time_scale = 1e-9 (seconds per time value)
-        Natural units for the time-domain. 
-        1e-9 means the system works with nanoseconds and gigahertz.
-        
-    Notes
-    -----
-    Device dimensions and the saturation magnetization ms are used to estimate 
-    the total angular momentum of the free layer, which affects the per-spin torque efficiency
-    and langevin field. Shape anisotropy is specified by the coercive fields
-    Byx and Bzx. The cross section thickness_fm*width is also used
-    to calculate the current density for the spin Hall torque (torque_type=1).
+    applied_Bx1, applied_By1, applied_Bz1 = 0 (Tesla)
+    applied_Bx2, applied_By2, applied_Bz2 = 0 (Tesla)
+        Externally applied field for each layer. Can specify a value or 
+        an array of length "steps" defined above to create a time-dependent
+        field.
     
-    Applied current is I(t) = I0 + I1*cos(2*pi*f1*t).
-
+    applied_tx1, applied_ty1, applied_tz1 = 0 (inverse seconds)
+    applied_tx2, applied_ty2, applied_tz2 = 0 (inverse seconds)
+        Externally applied torque for each layer in units of how much the 
+        magnetization unit vectors change per unit time. Can specify a value or
+        an array of length "steps" defined above to create a time-dependent
+        torque.
+        
+    log_level = 0 (flag)
+        How much information to include in the log output. This is mostly for
+        Jack to mess with, and won't produce reliable results.
     """
     
     def __init__(self, **kwargs):
@@ -207,51 +141,29 @@ class solver():
         # Load the shared library / dll
         self._macrospin = _c.CDLL(_path_dll)
 
+
+#############################################
+
         # Create the settings structure, and set the default values.
         self.data = _data(
         
-            T               = 0,
-            thickness_fm    = 10,
-            thickness_nm    = 10,
-            resistivity_fm  = 65.2,
-            resistivity_nm  = 21.9,
-            length          = 6000,
-            width           = 500,
-            ms              = 0.8,
-            Byx             = 0.005,
-            Bzx             = 0.8,
-            damping         = 0.02,
+            Byx1            = 0.005,
+            Bzx1            = 0.8,
+            Byx2            = 0.005,
+            Bzx2            = 0.8,
             
-            torque_type     = 1,
-            hall_angle      = 0.05,
-            g_factor        = 2.002319,
-            efficiency      = 1.0,
-            gyromagnetic_magnitude = 176084607648.0,
+            Bex1            = 0,
+            Bex2            = 0,
             
-            I0              = 0.0,
-            I1              = 0.0,
-            f1              = 2.0,
-            Bx_per_mA       = 0.0,
-            By_per_mA       = 0.0,
-            Bz_per_mA       = 0.0,
+            damping1        = 0.01,
+            damping2        = 0.01,
             
-            B0              = 0.02,
-            Bx_hat          = 0,
-            By_hat          = 1,
-            Bz_hat          = 0,
-            
-            mx = 1,
-            my = 0,
-            mz = 0,
-            Mx = 0,
-            My = 1,
-            Mz = 0,
+            g1              = 176084607648.0,
+            g2              = 176084607648.0,
             
             log_level       = 0,
             steps           = 10000,
-            t0              = 0,
-            dt              = 0.0005,
-            time_scale      = 1e-9)
+            dt              = 0.0005e-9)
         
         # Solution arrays
         self.solution_mx = None

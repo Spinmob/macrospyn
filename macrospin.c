@@ -8,393 +8,175 @@
 // CONSTANTS
 ////////////////////////////////
 #define PI 3.1415926535897
-#define ME 9.10938356e-31
-#define KB 1.38064852e-23
-#define EC 1.60217662e-19
 #define u0 1.25663706e-6
-#define uB 9.274009994e-24
-#define HBAR 1.0545718e-34
-#define TO_RADIANS 0.0174532925                     // for speed.
 
+// File handle for log
 FILE *log_file;
 
+// Main data structure, allowing user to specify parameters and 
+// external drives.
 struct DATA;
 typedef struct DATA
 {
-  double time_scale;                        // converts to nanoseconds.
+
+  // Integer for how much information to log.
+  int log_level;
 
   //////////////////////////////
   // Settings and parameters
   //////////////////////////////
 
-  // Physical system
-  double T;              // Temperature in K
-  double thickness_fm;   // thickness of the ferromagnetic layer (nm)
-  double thickness_nm;   // thickness of the normal metal layer (nm)
-  double resistivity_fm; // uOhm-cm (only the ratio matters, though)
-  double resistivity_nm; // uOhm-cm
-  double length;         // in-plane length of structure (nm)
-  double width;          // in-plane width of structure (nm)
-  double ms;             // saturation magnetization of free layer (T) used only for spin transfer efficiency and Langevin force
-  double Byx;            // in-plane hard axis demag field (T)
-  double Bzx;            // out-of-plane demag field (T)
-  double damping;        // Gilbert damping (unitless)
+  double Byx1;           // in-plane hard axis demag field (T), element 1
+  double Bzx1;           // out-of-plane hard axis demag field (T), element 1
+  double Byx2;           // in-plane hard axis demag field (T), element 2
+  double Bzx2;           // out-of-plane hard axis demag field (T), element 2
 
-  // We're doing a hacky modification of a spin-valve code to model our nanowires.
-  // We run our current through a Py/Pt nanowire. To estimate the vertical spin current
-  // density, we multiply the charge current density in the Pt layer by the spin Hall angle,
-  // then use the "Sinusoidal" spin torque. The fixed layer in this case simply defines
-  // the polarization (though it doesn't exist in the real system).
-  //
-  // This uses the sinusoidal torque and efficiency after calculating the current density.
+  double Bex1;           // Exchange-like field (T) experienced by element 1 (from element 2)
+  double Bex2;           // Exchange-like field (T) experienced by element 2 (from element 1)
 
-  int    torque_type; // 1 for spin Hall, 2 for sinusoid
-  double hall_angle;  // Conversion from charge to spin current density (also having units of "Amps/m^2"
-  double g_factor;    // Electron g-factor (2, usually)
-  double efficiency;  // number of hbar/2's each electron imparts (at most)
-  double gyromagnetic_magnitude; // 8.794033700300592e10*d->g_factor gyromagnetic ratio magnitude (rad / s T)
+  double damping1;       // Gradient damping (unitless), element 1
+  double damping2;       // Gradient damping (unitless), element 2
 
-  // Current drive I(t) = I0 + I1*cos(2*PI*f1*t)
-  double I0;        // DC current (mA)
-  double I1;        // RF amplitude (mA)
-  double f1;        // RF frequency (GHz)
-  double Bx_per_mA; // B-field along x per mA of current
-  double By_per_mA; // B-field along y per mA of current
-  double Bz_per_mA; // B-field along z per mA of current
+  double g1;             // magnitude of the gyromagnetic ratio (rad / s T) for element 1
+  double g2;             // magnitude of the gyromagnetic ratio (rad / s T) for element 2
 
-  // Applied field
-  double B0;          // Applied field (T)
-  double Bx_hat;      // Components of B_hat unit vector
-  double By_hat;
-  double Bz_hat;
+  //////////////////////////////////////////
+  // USER SUPPLIED ARRAYS
+  //////////////////////////////////////////
+  
+  // Array of fields (T) externally applied to by each element
+  double *applied_Bx1, *applied_By1, *applied_Bz1;
+  double *applied_Bx2, *applied_By2, *applied_Bz2; 
+
+  // Array of additional torques (inverse seconds) applied to each element's magnetization unit vector
+  double *applied_tx1, *applied_ty1, *applied_tz1;
+  double *applied_tx2, *applied_ty2, *applied_tz2;
 
   //////////////////////////////////////////
   // SOLVER STUFF
   //////////////////////////////////////////
 
   int    steps; // total number of steps
-  double t0;    // initial time (used only for RF current calculation)
-  double dt;    // time step (ns). 1 period at 50 GHz = 0.02
-
-  // Instantaneous values
-  int    n;     // current step
-  double mx;
-  double my;
-  double mz;
-  double Mx;
-  double My;
-  double Mz;
-  double Bx;
-  double By;
-  double Bz;
-  double I;
-  double Js;
+  double dt;    // time step (s)
 
   // Solution arrays
-  double *solution_mx;
-  double *solution_my;
-  double *solution_mz;
+  double *Bx1, *By1, *Bz1, *Bx2, *By2, *Bz2; // Total effective fields.
+  double *tx1, *ty1, *tz1, *tx2, *ty2, *tz2; // Total additional torques.
+  double *mx1, *my1, *mz1, *mx2, *my2, *mz2; // Magnetization unit vectors.
 
-  // Bureaucracy
-  int log_level;
+  // Intermediate values (differential steps returned by Dm)
+  double dmx1, dmy1, dmz1;
+  double dmx2, dmy2, dmz2;
 
 } DATA;
 
 
-
-
-////////////////////////////////////////
-// Standalone FUNCTIONS
-////////////////////////////////////////
-double Random_Gaussian()
-{
-  // this is from numerical recipes (sort of) I got it from some website, and it $
-  // book's algorythm for finding a random number with a gaussian distribution
-  // of width 1
-
-  static int noExtra = 1;  // the algorythm is a cute trick
-                           // that produces 2 numbers, if noExtra, make two new ones
-  static double gset;
-  double fac, r, v1, v2;
-
-  if (noExtra)
-  {
-    do // get two random numbers between -1 and 1, and make sure they are within the unit circle
-    {
-      v1 = 2.0*rand()/RAND_MAX - 1;
-      v2 = 2.0*rand()/RAND_MAX - 1;
-      r = v1*v1 + v2*v2;           // need two random numbers in the unit circle
-    } while (r >= 1.0 || r == 0);
-
-    // now do the transformation
-    fac = sqrt(-2.0*log(r)/r);
-    gset = v1*fac;
-    noExtra = 0; // we have an extra now
-    return v2*fac;
-  }
-  else
-  {
-    noExtra = 1;
-    return gset;
-  }
-}
-
-
-
-//////////////////////////////
-// Actuall solver functions
-//////////////////////////////
-
-double Beta(DATA *d) // spin transfer coefficient (depends on m's)
-{
-  // Prefactor on the spin transfer torque.
-  if(d->torque_type==1 || d->torque_type==2)
-    return(
-           // sin torque (also for Hall); the spin current is calculated differently for Hall.
-           // Note ms is in Tesla, so there is that extra u0
-	   d->efficiency*d->g_factor*uB*u0/(2*EC*d->thickness_fm*1e-9*d->ms)
-	   );
-  else
-    return(0);
-  // For other torque types (if I re-add them), this can depend on the magnetizations
-}
-
-
+///////////////////////////////////
+// ACTUAL SOLVER CODE
+///////////////////////////////////
 
 // Definitions of time differentials for the free and fixed layers
-double D_mx_Dt(DATA *d)
+double calculate_dms(DATA *d, int n)
 {
-  return(
-	  (
-       // Precession around field
-  	   d->gyromagnetic_magnitude*( d->By*d->mz-d->Bz*d->my )
+  // Calculate the instantaneous total effective magnetic field, including:
+  //          applied                 demag                         exchange
+  d->Bx1[n] = d->applied_Bx1[n]   -   0                      +   d->Bex1 * d->mx2[n];
+  d->By1[n] = d->applied_By1[n]   -   d->Byx1 * d->my1[n]    +   d->Bex1 * d->my2[n];  
+  d->Bz1[n] = d->applied_Bz1[n]   -   d->Bzx1 * d->mz1[n]    +   d->Bex1 * d->mz2[n];  
+  
+  // Calculate the instantaneous total additional torques, including:
+  //          applied                 spin transfer
+  d->tx1[n] = d->applied_tx1[n];
+  d->ty1[n] = d->applied_ty1[n];
+  d->tz1[n] = d->applied_tz1[n];
 
-       // Gradient damping
-       + d->gyromagnetic_magnitude*d->damping*( (d->my*d->my+d->mz*d->mz)*d->Bx
-                                - d->mx*d->my             *d->By
-                                - d->mx*d->mz             *d->Bz )
-       // Spin torque
-       + Beta(d) * d->Js * ( d->mx*d->my*d->My + d->mx*d->mz*d->Mz - (d->my*d->my+d->mz*d->mz)*d->Mx )
-	  ) * d->time_scale
-	);
-
-}
-
-double D_my_Dt(DATA *d)	// returns the current value of dmydt at t, mx and my
-{
-  return(
-	 (
-	    d->gyromagnetic_magnitude*( d->Bz*d->mx-d->Bx*d->mz )
-	  + d->gyromagnetic_magnitude*d->damping*( (d->mz*d->mz+d->mx*d->mx)*d->By - d->my*d->mz*d->Bz - d->my*d->mx*d->Bx )
-	  + Beta(d)*d->Js *        ( d->my*d->mz*d->Mz + d->my*d->mx*d->Mx - (d->mz*d->mz+d->mx*d->mx)*d->My )
-   ) * d->time_scale
-
-	);
-}
-double D_mz_Dt(DATA *d)	// returns the current value of dmydt at t, mx and my
-{
-  // if(d->log_level >= 2)
-  //   fprintf(log_file, " D_mz_Dt: Bx=%.1G By=%.1G mx=%.1G my=%.1G p=%.1G",
-  //   d->Bx, d->By, d->mx, d->my, d->gyromagnetic_magnitude*( d->Bx * d->my - d->By * d->mx ));
-
-  return(
-	 (
-	    d->gyromagnetic_magnitude*( d->Bx * d->my - d->By * d->mx )
-	  + d->gyromagnetic_magnitude*d->damping*( (d->mx*d->mx+d->my*d->my)*d->Bz - d->mz*d->mx*d->Bx - d->mz*d->my*d->By )
-	  + Beta(d)*d->Js*        ( d->mz*d->mx*d->Mx + d->mz*d->my*d->My - (d->mx*d->mx+d->my*d->my)*d->Mz )
-   ) * d->time_scale
-	);
+  // Calculate the magnetization unit vector step, including:
+  
+  //          Precession around the total effective field                     Gradient damping: steps down the energy gradient from the total magnetic field.                                                                                       Other torques
+  d->dmx1 = ( d->g1 * ( d->By1[n] * d->mz1[n] - d->Bz1[n] * d->my1[n] )   +   d->g1 * d->damping1 * ( ( d->my1[n] * d->my1[n] + d->mz1[n] * d->mz1[n] ) * d->Bx1[n] - d->mx1[n] * d->my1[n] * d->By1[n] - d->mx1[n] * d->mz1[n] * d->Bz1[n] )   +   d->tx1[n]     )*d->dt;
+  d->dmy1 = ( d->g1 * ( d->Bz1[n] * d->mx1[n] - d->Bx1[n] * d->mz1[n] )   +   d->g1 * d->damping1 * ( ( d->mz1[n] * d->mz1[n] + d->mx1[n] * d->mx1[n] ) * d->By1[n] - d->my1[n] * d->mz1[n] * d->Bz1[n] - d->my1[n] * d->mx1[n] * d->Bx1[n] )   +   d->ty1[n]     )*d->dt;
+  d->dmz1 = ( d->g1 * ( d->Bx1[n] * d->my1[n] - d->By1[n] * d->mx1[n] )   +   d->g1 * d->damping1 * ( ( d->mx1[n] * d->mx1[n] + d->my1[n] * d->my1[n] ) * d->Bz1[n] - d->mz1[n] * d->mx1[n] * d->Bx1[n] - d->mz1[n] * d->my1[n] * d->By1[n] )   +   d->tz1[n]     )*d->dt;
 }
 
 
 void Solve_Huen(DATA *d)
 {
-  // This just runs through the time-domain once, populating all the solution_* variables.
+  // This just runs through the time-domain once, populating all the solution arrays.
 
           // Log output indented for easy viewing of "important" code.
           if(d->log_level) log_file = fopen("macrospin.log", "w");
           if(d->log_level) fprintf(log_file, "Solve_Huen... FIGHT!\n");
 
-  // Seed the randomnumber generator
-  srand(time(NULL));
-
-
-
-
-  // Langevin field
-  double Bx_langevin;
-  double By_langevin;
-  double Bz_langevin;
-
   // changes in the unit vectors per dt
-  double dmx1,dmy1,dmz1;
-  double dmx2,dmy2,dmz2;
+  double dmx1,dmy1,dmz1,dmx2,dmy2,dmz2;
 
-  // factor by which to normalize the components at each step
-  double norminator  = 1;
-
-
-
-
-  // single-calculation of langevin pre-factor (speed boost)
-  double Bl = sqrt(2.0*d->T*d->damping*KB/(d->gyromagnetic_magnitude*d->ms/u0*d->length*d->width*d->thickness_fm*1e-27)/(d->dt*d->time_scale));
-
-          if(d->log_level) fprintf(log_file, "%.2f %.2f %.2f %.2f %.2f %.2f %.2G %.2G\n",
-                        d->T, d->damping, d->ms, d->length, d->width, d->thickness_fm, d->dt, d->time_scale);
-
-  // Conversion from mA of current to A/m^2 charge current
-  double I_to_Js;
-  if(d->torque_type==1)
-    //   hall angle * current density through spin hall layer
-    I_to_Js = d->hall_angle * 0.001 / (d->width*d->thickness_nm*1e-18)
-              / (1.0 + d->resistivity_nm*d->thickness_fm/(d->resistivity_fm*d->thickness_nm));
-  else
-    I_to_Js = 0.001/(d->width*d->length*1e-18);
-
-
-
-
-  // Initial normalization of all unit vectors
-  norminator = 1.0/sqrt(d->mx*d->mx
-                      + d->my*d->my
-                      + d->mz*d->mz);
-  d->mx = d->mx*norminator;
-  d->my = d->my*norminator;
-  d->mz = d->mz*norminator;
-
-  norminator = 1.0/sqrt(d->Mx*d->Mx
-                      + d->My*d->My
-                      + d->Mz*d->Mz);
-  d->Mx = d->Mx*norminator;
-  d->My = d->My*norminator;
-  d->Mz = d->Mz*norminator;
-
-  norminator = 1.0/sqrt(d->Bx_hat*d->Bx_hat
-                      + d->By_hat*d->By_hat
-                      + d->Bz_hat*d->Bz_hat);
-  d->Bx_hat = d->Bx_hat*norminator;
-  d->By_hat = d->By_hat*norminator;
-  d->Bz_hat = d->Bz_hat*norminator;
-
-
-
-
-  // Calculate the n=0 values to start the loop
-  d->I  = d->I0 + d->I1*cos(2*PI*d->f1*d->t0); // Current through wire at t=t0 (mA)
-  d->Js = I_to_Js*d->I;                        // Spin current density at t=t0 (A/m^2)
-  Bx_langevin = Bl*Random_Gaussian();
-  By_langevin = Bl*Random_Gaussian();
-  Bz_langevin = Bl*Random_Gaussian();
-
-          if(d->log_level) fprintf(log_file, "Bl=(%.1G,%.1G,%.1G) %.2f\n", Bx_langevin, By_langevin, Bz_langevin, Bl);
-
-
+  // Factor by which to normalize the components at each step
+  // This variable will be adjusted after each step.
+  double norminator = 1.0/sqrt(d->mx1[0] * d->mx1[0] 
+                             + d->my1[0] * d->my1[0] 
+                             + d->mz1[0] * d->mz1[0]);
+  d->mx1[0] = d->mx1[0]*norminator;
+  d->my1[0] = d->my1[0]*norminator;
+  d->mz1[0] = d->mz1[0]*norminator;
 
   // solve the time dependence
-  d->n = 0;
-  while(d->n < d->steps)
+  int    n = 0;                      // step number
+  double dmx1i, dmy1i, dmz1i;        // initial Euler step
+  for(int n=0; n <= d->steps-2; n++) // This loop calculates the n+1 index, and doesn't need to do anything when n=steps-1
   {
-    // Store the current step in the solution arrays
-    d->solution_mx[d->n] = d->mx;
-    d->solution_my[d->n] = d->my;
-    d->solution_mz[d->n] = d->mz;
+    /* 
+    
+    Heun method: with our derivative step D(d,n), we calculate intermediate value
+    
+      yi[n+1] = y[n] + D(y,n)
 
-            if(d->log_level >= 2)
-              fprintf(log_file, " %i m=(%.1G,%0.1G,%0.1G)",
-              d->n, d->solution_mx[d->n], d->solution_my[d->n], d->solution_mz[d->n]);
+    then get a better estimate
+      
+      y[n+1] = y[n] + 0.5*( D(y,n) + D(yi,n+1) )
 
-    // Re-calculate the instantaneous field using the current values of
-    // mx, my, mz, and this step's Langevin field.
-    d->Bx = d->B0*d->Bx_hat                + Bx_langevin + d->Bx_per_mA*d->I;
-    d->By = d->B0*d->By_hat - d->Byx*d->my + By_langevin + d->By_per_mA*d->I;
-    d->Bz = d->B0*d->Bz_hat - d->Bzx*d->mz + Bz_langevin + d->Bz_per_mA*d->I;
+    Importantly, Dm(d,n) involves the current magnetization, field, etc, 
+    whereas Dm(di, n+1) involves the intnermediate magnetization, field, etc at the next step.
 
-            if(d->log_level >= 2)
-              fprintf(log_file, " B=(%.1G,%.1G,%.1G) I=%.1G",
-              d->Bx, d->By, d->Bz, d->I);
+    */
 
-    // Euler method aproximate step, using this iteration's values
-    dmx1 = d->dt * D_mx_Dt(d);
-    dmy1 = d->dt * D_my_Dt(d);
-    dmz1 = d->dt * D_mz_Dt(d);
-    d->mx = d->mx + dmx1;
-    d->my = d->my + dmy1;
-    d->mz = d->mz + dmz1;
+    // Calculate the Euler-method step. This populates the step values d->dmx1, d->dmy1, ...
+    calculate_dms(d, n);
+    
+    // Keep these steps for the Heun result below
+    dmx1i = d->dmx1;
+    dmy1i = d->dmy1;
+    dmz1i = d->dmz1;
 
-    // Normalize
-    // Use a Taylor expansion of sqrt() near 1 to speed up the calculation.
-    norminator = 1.0/(1.0 + 0.5 * (d->mx*d->mx + d->my*d->my + d->mz*d->mz - 1) );
-    d->mx = d->mx*norminator;
-    d->my = d->my*norminator;
-    d->mz = d->mz*norminator;
+    // Step the magnetization unit vector to the intermediate value using Euler.
+    // This will be overwritten (corrected) at the end of the Heun method.
+    d->mx1[n+1] = d->mx1[n] + dmx1i; 
+    d->my1[n+1] = d->my1[n] + dmy1i;
+    d->mz1[n+1] = d->mz1[n] + dmz1i;
 
-    // Here we have set the actual values of mx, my, and mz to this intermediate
-    // approximation, so that we can make the second step for the Huen approximation
-    // For this we also want to increment the time and all other values
-    d->n++;
+    // Normalize the new magnetization using the Taylor expansion of sqrt() near 1 to speed up the calculation.
+    norminator = 1.0/(1.0 + 0.5 * (d->mx1[n+1]*d->mx1[n+1] + d->my1[n+1]*d->my1[n+1] + d->mz1[n+1]*d->mz1[n+1] - 1) );
+    d->mx1[n+1] = d->mx1[n+1]*norminator;
+    d->my1[n+1] = d->my1[n+1]*norminator;
+    d->mz1[n+1] = d->mz1[n+1]*norminator;
 
-    // Update the next step's charge current (mA) and spin current density (A/m^2)
-    // SPEEDUP: Could use an approximate form here
-    //          Could evaluate cos once, and have another solution array
-    //          calculating the overlap with this function.
-    if(d->I1 != 0) d->I  = d->I0 + d->I1*cos(2*PI*d->f1*(d->n*d->dt + d->t0));
-    else           d->I  = d->I0;  // saves a cos() call for I1=0 simulations
-    d->Js = d->I*I_to_Js;
+    // Calculate the magnetization change for the *next* step using the intermediate Euler result.
+    calculate_dms(d, n+1);
 
-    // Next step's Langevin field (T).
-    // SPEEDUP: Could use rand() straight up (approximating Gaussian as flat)
-    //          It will converge to the same result from the central limit theorem
-    if(d->T>0)
-    {
-      Bx_langevin = Bl*Random_Gaussian();
-      By_langevin = Bl*Random_Gaussian();
-      Bz_langevin = Bl*Random_Gaussian();
-    }
-    else // Saves some processor time.
-    {
-      Bx_langevin = 0;
-      By_langevin = 0;
-      Bz_langevin = 0;
-    }
+    // Overwrite the Euler result with the Heun estimate
+    d->mx1[n+1] = d->mx1[n] + 0.5*(dmx1i + d->dmx1);
+    d->my1[n+1] = d->my1[n] + 0.5*(dmx1i + d->dmy1);
+    d->mz1[n+1] = d->mz1[n] + 0.5*(dmx1i + d->dmz1);
 
-    // Next step's *approximate* field based on Euler mx, my, and mz
-    // (do NOT use this for the next iteration!)
-    d->Bx = d->B0*d->Bx_hat                + Bx_langevin + d->Bx_per_mA*d->I;
-    d->By = d->B0*d->By_hat - d->Byx*d->my + By_langevin + d->By_per_mA*d->I;
-    d->Bz = d->B0*d->Bz_hat - d->Bzx*d->mz + Bz_langevin + d->Bz_per_mA*d->I;
-
-    // Second value of dm/dt
-    dmx2 = d->dt * D_mx_Dt(d);
-    dmy2 = d->dt * D_my_Dt(d);
-    dmz2 = d->dt * D_mz_Dt(d);
-
-    // Now add the averaged increment to the original magnetization.
-    // This is the Heun estimate for the next step.
-    d->mx = d->solution_mx[d->n-1] + 0.5*(dmx1+dmx2);
-    d->my = d->solution_my[d->n-1] + 0.5*(dmy1+dmy2);
-    d->mz = d->solution_mz[d->n-1] + 0.5*(dmz1+dmz2);
-
-    // normalize the final vector
-    // Use a Taylor expansion of sqrt() near 1 to speed up the calculation.
-    norminator = 1.0/(1.0 + 0.5 * (d->mx*d->mx + d->my*d->my + d->mz*d->mz - 1) );
-    d->mx = d->mx*norminator;
-    d->my = d->my*norminator;
-    d->mz = d->mz*norminator;
-
-            if(d->log_level>=2) fprintf(log_file, " dN=%.1G", norminator-1);
-
-    // Note the field should now be re-calculated at the beginning of the loop using
-    // these more accurate values of mx, my, and mz.
-
-            if(d->log_level>=2) fprintf(log_file, "\n");
+    // Normalize the new magnetization using the Taylor expansion of sqrt() near 1 to speed up the calculation.
+    norminator = 1.0/(1.0 + 0.5 * (d->mx1[n+1]*d->mx1[n+1] + d->my1[n+1]*d->my1[n+1] + d->mz1[n+1]*d->mz1[n+1] - 1) );
+    d->mx1[n+1] = d->mx1[n+1]*norminator;
+    d->my1[n+1] = d->my1[n+1]*norminator;
+    d->mz1[n+1] = d->mz1[n+1]*norminator;
 
   } // end of for loop
 
-  // Update the field and time t0. mx, my, and mz should already be updated.
-  d->Bx = d->B0*d->Bx_hat                + Bx_langevin + d->Bx_per_mA*d->I;
-  d->By = d->B0*d->By_hat - d->Byx*d->my + By_langevin + d->By_per_mA*d->I;
-  d->Bz = d->B0*d->Bz_hat - d->Bzx*d->mz + Bz_langevin + d->Bz_per_mA*d->I;
-  d->t0 += d->dt * d->steps;
+  // Update the total field & torque values by calculating the next step.
+  calculate_dms(d,n);
 
   if(d->log_level) fprintf(log_file, "Ada!");
   if(d->log_level) fclose(log_file);
