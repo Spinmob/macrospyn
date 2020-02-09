@@ -252,8 +252,32 @@ class solver():
         
         return self
 
-    
+    def plot(self, n1=0, n2=None):
+        """
+        Creates a plot for inspecting trajectories.
+        
 
+        Parameters
+        ----------
+        n1=0, n2=None
+            Start and stop indices respectively.
+        
+        Returns
+        -------
+        self
+
+        """
+        # Find the upper index if needed
+        if n2 is None: n2 = self.steps
+
+        # Make the plot
+        import spinmob as sm
+        sm.plot.xy.data(m.dt, [m.ax[n1:n2],m.ay[n1:n2],m.az[n1:n2],
+                               m.bx[n1:n2],m.by[n1:n2],m.bz[n1:n2]],
+                        label=['ax','ay','az','bx','by','bz'], 
+                        xlabel='Time', ylabel='Projection')
+    
+        return self
 
 if __name__ == '__main__':
     
@@ -265,14 +289,9 @@ if __name__ == '__main__':
     m.b.set(gamma=2*_n.pi, By=1.0)
     
     # Run it
-    m.run()
+    m.run().plot()
     
-    # Plot.
-    n1=0
-    import spinmob as sm
-    sm.plot.xy.data(m.dt, [m.ax[n1:],m.ay[n1:],m.az[n1:],m.bx[n1:],m.by[n1:],m.bz[n1:]],
-                    label=['ax','ay','az','bx','by','bz'], 
-                    xlabel='Time (s)', ylabel='Projection (unitless)')
+    
     
     
     
