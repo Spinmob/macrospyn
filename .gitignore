@@ -13,3 +13,4 @@ gui_settings/
 *.layout
 *.def
 *.win
+*.log
