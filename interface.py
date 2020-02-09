@@ -141,6 +141,10 @@ class _domain(_c.Structure):
             if type(kwargs[k])==_n.ndarray:
                 exec('self._'+k+"=v", dict(self=self,v=to_pointer(kwargs[k])))
             
+            # Otherwise, if it's None, update the pointer
+            elif kwargs[k] is None:
+                exec('self._'+k+"=v", dict(self=self,v=None))
+            
         return self
         
 
