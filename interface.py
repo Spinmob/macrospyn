@@ -333,10 +333,10 @@ class solver():
 if __name__ == '__main__':
     
     # Create a solver instance
-    m = solver(dt=0.005, steps=370)
+    m = solver(dt=0.005, steps=870)
     
     # Set up the physical parameters
-    m.set(By=1.0, gamma=_n.pi*2, dt=0.005, zzz=300, steps=270, alpha=0.1)
+    m.set(By=10.0, gamma=_n.pi*2, dt=0.005, zzz=300, steps=270, alpha=0.2/_n.pi/2)
     m.a.set(Bys=_n.linspace(0,1,m.steps))
     
     # Run it & plot.

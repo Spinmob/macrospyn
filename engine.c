@@ -24,7 +24,7 @@
 #include <math.h>
 #include <time.h>
 
-int log_level=3;
+int log_level=0;
 FILE *log_file;
 
 ///////////////////////////////
@@ -215,10 +215,11 @@ int solve_heun(DOMAIN *a, DOMAIN *b, double dt, int N) {
   long t0 = time(0);
 
   // Log file
-  log_file = fopen("engine.log", "w");
-  if(log_level >=1) fprintf(log_file, "solve_heun() beings %li\n------------------------------------------------\n\n", t0);
-
-  log_step(a,b,0);
+  if(log_level > 0) {
+    log_file = fopen("engine.log", "w");
+    fprintf(log_file, "solve_heun() beings %li\n------------------------------------------------\n\n", t0);
+    log_step(a,b,0);
+  }
 
   // The initial condition of the magnetization is assumed to be the 
   // first element of the array, but we should make sure it's length is 1!
@@ -301,6 +302,8 @@ int solve_heun(DOMAIN *a, DOMAIN *b, double dt, int N) {
   } // End of for loop.
 
   // At this point, the whole solution arrays should be populated.
-  if(log_level>=1) fprintf(log_file, "\n\n------------------------------------------------\nDone after %li", time(0)-t0);
-  fclose(log_file);
+  if(log_level>0) {
+    fprintf(log_file, "\n\n------------------------------------------------\nDone after %li", time(0)-t0);
+    fclose(log_file);
+  }
 }
