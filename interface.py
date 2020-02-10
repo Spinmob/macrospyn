@@ -146,7 +146,8 @@ class _domain(_c.Structure):
                 exec('self._'+k+"=v", dict(self=self,v=None))
             
         return self
-        
+    
+    __call__ = set
 
 
 
@@ -213,17 +214,54 @@ class solver():
         self.a.mode=1
         self.b.mode=1
         
-    def __repr__(self):
+    def set(self, **kwargs): 
         """
-        Returns the string that appears when you inspect the object.
-        """
-        s = "solver instance"
+        Sets any number of parameters for the solver. Magnetic parameters will
+        be applied to both domains.
+
+        Parameters
+        ----------
+        **kwargs : keyword will be set by evaluating self.keyword = value. In 
+        the case of an array, it will connect the appropriate (64-bit float) 
+        pointer. This will also save a "local" copy of the supplied value, such
+        that garbage collection doesn't automatically delete it.
         
-        return s
-    
-    def run(self):
+        Example
+        -------
+        my_solver.set(dt=0.005)
+
+        Returns
+        -------
+        self
+
         """
-        Creates the solution arrays and runs the solver.
+        
+        for k in kwargs:
+
+            # If it's a property of the solver, store it in the solver
+            if k in ['dt', 'steps', 'ax0', 'ay0', 'az0', 'bx0', 'by0', 'bz0']:
+                exec('self.'+k+"=v", dict(self=self,v=kwargs[k]))
+        
+            # Otherwise, send it to a and b.
+            else:
+                self.a.set(**{k:kwargs[k]})
+                self.b.set(**{k:kwargs[k]})
+            
+        return self
+    
+    __call__ = set
+    
+    def run(self, update_initial_condition=True):
+        """
+        Creates the solution arrays and runs the solver to fill them up.
+        Afterward, the initial conditions are (by default) set to the 
+        last value of the solution arrays.
+        
+        Parameters
+        ----------
+        update_initial_condition=True
+            If True, the initial conditions (self.ax0, self.bx0, ...) will be
+            set to the last value of the solution arrays.
         """
         self.steps = int(self.steps)
         
@@ -250,9 +288,18 @@ class solver():
                            _c.c_double(self.dt), 
                            _c.c_int(self.steps))
         
+        # Set the initial conditions for the next run
+        if update_initial_condition:
+            self.ax0 = self.ax[-1]
+            self.ay0 = self.ay[-1]
+            self.az0 = self.az[-1]
+            self.bx0 = self.bx[-1]
+            self.by0 = self.by[-1]
+            self.bz0 = self.bz[-1]
+        
         return self
 
-    def plot(self, n1=0, n2=None):
+    def plot(self, n1=0, n2=None, t0=0, **kwargs):
         """
         Creates a plot for inspecting trajectories.
         
@@ -261,6 +308,9 @@ class solver():
         ----------
         n1=0, n2=None
             Start and stop indices respectively.
+        
+        **kwargs
+            These are sent to spinmob.plot.xy.data().
         
         Returns
         -------
@@ -272,24 +322,27 @@ class solver():
 
         # Make the plot
         import spinmob as sm
-        sm.plot.xy.data(m.dt, [m.ax[n1:n2],m.ay[n1:n2],m.az[n1:n2],
+        ts = m.dt*_n.array(range(len(m.ax))) + t0
+        sm.plot.xy.data(ts, [m.ax[n1:n2],m.ay[n1:n2],m.az[n1:n2],
                                m.bx[n1:n2],m.by[n1:n2],m.bz[n1:n2]],
                         label=['ax','ay','az','bx','by','bz'], 
-                        xlabel='Time', ylabel='Projection')
+                        xlabel='Time', ylabel='Projection', **kwargs)
     
         return self
 
 if __name__ == '__main__':
     
     # Create a solver instance
-    m = solver(dt=0.005, steps=1e3)
+    m = solver(dt=0.005, steps=370)
     
     # Set up the physical parameters
-    m.a.set(gamma=2*_n.pi, By=1.0, Bys=_n.linspace(0,1,m.steps))
-    m.b.set(gamma=2*_n.pi, By=1.0)
+    m.set(By=1.0, gamma=_n.pi*2, dt=0.005, zzz=300, steps=270, alpha=0.1)
+    m.a.set(Bys=_n.linspace(0,1,m.steps))
     
-    # Run it
+    # Run it & plot.
     m.run().plot()
+    m.run().plot(clear=0, t0=(m.steps-1)*m.dt)
+    m.run().plot(clear=0, t0=(m.steps-1)*m.dt*2)
     
     
     
