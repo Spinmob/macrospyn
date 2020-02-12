@@ -34,7 +34,7 @@ FILE *log_file;
 // Data structure for each domain. 
 // We use a struct because there is no cross-platform-compiler means of
 // having Python interact with a C++ class. Blame the C++ compilers.
-typedef struct DOMAIN {
+typedef struct domain {
 
     //////////////////////////////
     // Model Inputs 
@@ -82,6 +82,9 @@ typedef struct DOMAIN {
     // 0 = disabled, 1 = LLG
     int mode;    
 
+    // Initial conditions
+    double x0, y0, z0;
+
     //////////////////////////////////////////
     // SOLVER STUFF
     //////////////////////////////////////////
@@ -89,12 +92,12 @@ typedef struct DOMAIN {
     // Solution arrays
     double *x, *y, *z;  // Magnetization unit vector
 
-} DOMAIN; 
+} domain; 
 
 // Sets all the instantaneous model inputs for step n.
 // We do this to ease the user's ability to input parameters
 // vs arrays.
-void get_input_parameters(DOMAIN *a, int n) {
+void get_input_parameters(domain *a, int n) {
 
     // Always check that the array exists first, then assume it's
     // of sufficient length.
@@ -135,10 +138,10 @@ void get_input_parameters(DOMAIN *a, int n) {
 
 // Calculate a single step for this domain, if enabled.
 // Parameters
-//   DOMAIN *a    The domain whose step we wish to calculate.
-//   DOMAIN *b    The "other" domain that exerts exchange fields, dipolar fields, and spin transfer.
+//   domain *a    The domain whose step we wish to calculate.
+//   domain *b    The "other" domain that exerts exchange fields, dipolar fields, and spin transfer.
 //   int n        The step at which to calculate.
-void D(DOMAIN *a, DOMAIN *b, int n, double dt, double *dx, double *dy, double *dz) {
+void D(domain *a, domain *b, int n, double dt, double *dx, double *dy, double *dz) {
 
     // At each step (including intermediate steps), make sure to get 
     // the most current model input values.
@@ -194,7 +197,7 @@ void D(DOMAIN *a, DOMAIN *b, int n, double dt, double *dx, double *dy, double *d
 ///////////////////////////////////
 // LOG STUFF
 ///////////////////////////////////
-void log_step(DOMAIN *a, DOMAIN *b, int n) {
+void log_step(domain *a, domain *b, int n) {
     fprintf(log_file, "n=%i --------------------------%p\n", n, a->x);
     fprintf(log_file, "  a->gamma=%f, pointer=%p\n",     a->gamma, a->gammas);
     fprintf(log_file, "  a->M=%f,     pointer=%p\n",     a->M,     a->Ms);
@@ -210,7 +213,7 @@ void log_step(DOMAIN *a, DOMAIN *b, int n) {
 // SOLVER
 ///////////////////////////////////
 
-int solve_heun(DOMAIN *a, DOMAIN *b, double dt, int N) {
+int solve_heun(domain *a, domain *b, double dt, int N) {
  
   long t0 = time(0);
 
@@ -287,13 +290,13 @@ int solve_heun(DOMAIN *a, DOMAIN *b, double dt, int N) {
     // Normalize the new magnetization using the Taylor expansion of sqrt() near 1 to speed up the calculation.
     double norminator;
     
-    // DOMAIN a
+    // domain a
     norminator = 1.0/(1.0 + 0.5 * (a->x[n+1]*a->x[n+1] + a->y[n+1]*a->y[n+1] + a->z[n+1]*a->z[n+1] - 1.0) );
     a->x[n+1] *= norminator;
     a->y[n+1] *= norminator;
     a->z[n+1] *= norminator;
 
-    // DOMAIN b
+    // domain b
     norminator = 1.0/(1.0 + 0.5 * (b->x[n+1]*b->x[n+1] + b->y[n+1]*b->y[n+1] + b->z[n+1]*b->z[n+1] - 1.0) );
     b->x[n+1] *= norminator;
     b->y[n+1] *= norminator;
@@ -307,3 +310,4 @@ int solve_heun(DOMAIN *a, DOMAIN *b, double dt, int N) {
     fclose(log_file);
   }
 }
+

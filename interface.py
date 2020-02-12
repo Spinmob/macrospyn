@@ -9,9 +9,9 @@ if _platform in ['win32']: _path_dll = _os.path.join(_os.path.split(__file__)[0]
 else:                      _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine.so')
 
 # Get the engine.
-_engine = _c.CDLL(_path_dll)
+_engine = _c.cdll.LoadLibrary(_path_dll)
 
-def to_pointer(numpy_array): 
+def to_pointer_double(numpy_array): 
     """
     Converts the supplied numpy_array (assumed to be the usual 64-bit float)
     to a pointer, allowing it ot be "connected" to the C-code engine.
@@ -33,7 +33,7 @@ def to_pointer(numpy_array):
     
     Examples
     --------
-    my_solver.Bxs = to_pointer(my_Bxs).
+    my_solver.Bxs = to_pointer_double(my_Bxs).
     
     """
     return numpy_array.ctypes.data_as(_c.POINTER(_c.c_double))
@@ -46,7 +46,9 @@ class _domain(_c.Structure):
     The user should not interact with this for the most part.
     """
     
-    # NOTE: This thing REALLY has to match the struct in the C-code.
+    # NOTE: The order here and structure here REALLY has to match the struct 
+    # in the C-code! This class will be sent by reference, and the c-code 
+    # will expect everything to be in its place.
     _fields_ = [
         
         # Magnitude of the gyromagnetic ratio [radians / (sec T)]
@@ -103,6 +105,11 @@ class _domain(_c.Structure):
         # Solver mode: 0=disabled, 1=LLG
         ('mode', _c.c_int),
         
+        # Initial conditions
+        ('x0',   _c.c_double),
+        ('y0',   _c.c_double),
+        ('z0',   _c.c_double),
+        
         # Solution arrays
         ('_x', _c.POINTER(_c.c_double)),
         ('_y', _c.POINTER(_c.c_double)),
@@ -139,7 +146,7 @@ class _domain(_c.Structure):
             
             # If it's an array, convert it before setting
             if type(kwargs[k])==_n.ndarray:
-                exec('self._'+k+"=v", dict(self=self,v=to_pointer(kwargs[k])))
+                exec('self._'+k+"=v", dict(self=self,v=to_pointer_double(kwargs[k])))
             
             # Otherwise, if it's None, update the pointer
             elif kwargs[k] is None:
@@ -162,18 +169,18 @@ class solver():
         self.dt    = dt
         self.steps = steps
         
-        # Initial conditions
-        self.ax0   = 1.0
-        self.ay0   = 2.0
-        self.az0   = 0.0
-        self.bx0   = 1.0
-        self.by0   = 0.0
-        self.bz0   = 0.0
-
         # Create the settings structure, and set the default values.
         self.a = _domain()
         self.b = _domain()
         
+        # Initial conditions
+        self.a.x0   = 1.0
+        self.a.y0   = 0.0
+        self.a.z0   = 0.0
+        self.b.x0   = 1.0
+        self.b.y0   = 0.0
+        self.b.z0   = 0.0
+
         # Null all the array pointers, just to be safe 
         # (different platforms, Python versions, etc...)
         self.a._gammas = self.b._gammas = None
@@ -266,36 +273,34 @@ class solver():
         self.steps = int(self.steps)
         
         # Create the solution arrays
-        self.ax = _n.zeros(self.steps); self.ax[0] = self.ax0
-        self.ay = _n.zeros(self.steps); self.ay[0] = self.ay0
-        self.az = _n.zeros(self.steps); self.az[0] = self.az0
-        self.bx = _n.zeros(self.steps); self.bx[0] = self.bx0
-        self.by = _n.zeros(self.steps); self.by[0] = self.by0
-        self.bz = _n.zeros(self.steps); self.bz[0] = self.bz0
+        self.ax = _n.zeros(self.steps); self.ax[0] = self.a.x0
+        self.ay = _n.zeros(self.steps); self.ay[0] = self.a.y0
+        self.az = _n.zeros(self.steps); self.az[0] = self.a.z0
+        self.bx = _n.zeros(self.steps); self.bx[0] = self.b.x0
+        self.by = _n.zeros(self.steps); self.by[0] = self.b.y0
+        self.bz = _n.zeros(self.steps); self.bz[0] = self.b.z0
         
-        # Provide the c-code with access to the numpy array data
-        self.a._x = to_pointer(self.ax)
-        self.a._y = self.ay.ctypes.data_as(_c.POINTER(_c.c_double))
-        self.a._z = self.az.ctypes.data_as(_c.POINTER(_c.c_double))
-        self.b._x = self.bx.ctypes.data_as(_c.POINTER(_c.c_double))
-        self.b._y = self.by.ctypes.data_as(_c.POINTER(_c.c_double))
-        self.b._z = self.bz.ctypes.data_as(_c.POINTER(_c.c_double))
+        # Provide the c-code with access to the array data
+        self.a._x = to_pointer_double(self.ax)
+        self.a._y = to_pointer_double(self.ay)
+        self.a._z = to_pointer_double(self.az)
+        self.b._x = to_pointer_double(self.bx)
+        self.b._y = to_pointer_double(self.by)
+        self.b._z = to_pointer_double(self.bz)
         
         # Solve it.
         _engine.solve_heun.restype = None
-        _engine.solve_heun(_c.byref(self.a), 
-                           _c.byref(self.b), 
-                           _c.c_double(self.dt), 
-                           _c.c_int(self.steps))
+        _engine.solve_heun(_c.byref(self.a), _c.byref(self.b), 
+                           _c.c_double(self.dt), _c.c_int(self.steps))
         
         # Set the initial conditions for the next run
         if update_initial_condition:
-            self.ax0 = self.ax[-1]
-            self.ay0 = self.ay[-1]
-            self.az0 = self.az[-1]
-            self.bx0 = self.bx[-1]
-            self.by0 = self.by[-1]
-            self.bz0 = self.bz[-1]
+            self.a.x0 = self.ax[-1]
+            self.a.y0 = self.ay[-1]
+            self.a.z0 = self.az[-1]
+            self.b.x0 = self.bx[-1]
+            self.b.y0 = self.by[-1]
+            self.b.z0 = self.bz[-1]
         
         return self
 
@@ -336,8 +341,9 @@ if __name__ == '__main__':
     m = solver(dt=0.005, steps=870)
     
     # Set up the physical parameters
-    m.set(By=10.0, gamma=_n.pi*2, dt=0.005, zzz=300, steps=270, alpha=0.2/_n.pi/2)
-    m.a.set(Bys=_n.linspace(0,1,m.steps))
+    m.set(By=10.0, gamma=_n.pi*2, dt=0.005, zzz=300, steps=270, alpha=0.1/_n.pi/2)
+    m.a.set(Bys=_n.linspace(0,2,m.steps))
+    m.set(bz0=2)
     
     # Run it & plot.
     m.run().plot()
