@@ -251,7 +251,7 @@ class solver_api():
         for k in kwargs:
 
             # If it's a property of the solver, store it in the solver
-            if k in ['dt', 'steps', 'ax0', 'ay0', 'az0', 'bx0', 'by0', 'bz0']:
+            if k in ['dt', 'steps']:
                 exec('self.'+k+"=v", dict(self=self,v=kwargs[k]))
         
             # Otherwise, send it to a and b.
@@ -272,7 +272,7 @@ class solver_api():
         Parameters
         ----------
         update_initial_condition=True
-            If True, the initial conditions (self.ax0, self.bx0, ...) will be
+            If True, the initial conditions (self.a.x0, self.b.x0, ...) will be
             set to the last value of the solution arrays.
         """
         self.steps = int(self.steps)
@@ -331,9 +331,9 @@ class solver_api():
         if n2 is None: n2 = self.steps
 
         # Make the plot
-        ts = m.dt*_n.array(range(len(m.ax))) + t0
-        _s.plot.xy.data(ts, [m.ax[n1:n2],m.ay[n1:n2],m.az[n1:n2],
-                               m.bx[n1:n2],m.by[n1:n2],m.bz[n1:n2]],
+        ts = self.dt*_n.array(range(len(self.ax))) + t0
+        _s.plot.xy.data(ts, [self.ax[n1:n2],self.ay[n1:n2],self.az[n1:n2],
+                             self.bx[n1:n2],self.by[n1:n2],self.bz[n1:n2]],
                         label=['ax','ay','az','bx','by','bz'], 
                         xlabel='Time', ylabel='Projection', **kwargs)
     
@@ -356,38 +356,102 @@ class solver():
         self.window = _g.Window(title='Macrospin(mob)', autosettings_path='solver.window.txt')
         
         # Top row controls for the "go" button, etc
-        self.grid_top          = self.window  .place_object(_g.GridLayout(False)) 
+        self.grid_top          = self.window  .place_object(_g.GridLayout(False), alignment=1) 
         self.button_go         = self.grid_top.place_object(_g.Button('Go!'))
         self.number_iterations = self.grid_top.place_object(_g.NumberBox(10, bounds=(0,None)))
         self.label_iteration   = self.grid_top.place_object(_g.Label(''))
         
         # Bottom row controls for settings and plots.
         self.window.new_autorow()
-        self.grid_bottom = self.window     .place_object(_g.GridLayout(False))
-        self.settings    = self.grid_bottom.place_object(_g.TreeDictionary(autosettings_path='solver.settings.txt'))
-        self.tabs        = self.grid_bottom.place_object(_g.TabArea(autosettings_path='solver.tabs.txt'))
-        self.tab_inspect = self.tabs.add_tab('Inspect')
+        self.grid_bottom  = self.window     .place_object(_g.GridLayout(False), alignment=0)
+        
+        # Settings
+        self.settings     = self.grid_bottom.place_object(_g.TreeDictionary(autosettings_path='solver.settings.txt'))
+        
+        self.settings.add_parameter('solver/dt',    5e-12,  dec=True,                  siPrefix=True, suffix='s')
+        self.settings.add_parameter('solver/steps', 100000, dec=True, limits=(2,None), siPrefix=True, suffix='steps')
+        self.settings.add_parameter('solver/keep_resetting', False)
+        
+        self.settings.add_parameter('a/mode', 1, limits=(0,1), tip='0=disabled, 1=LLG')
+        
+        self.settings.add_parameter('a/material/gamma', 1.0, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
+        self.settings.add_parameter('a/material/M',     1.760859644e11, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
+        self.settings.add_parameter('a/material/alpha', 0.01, tip='Gilbert damping parameter')        
+        
+        self.settings.add_parameter('a/initial_condition/x0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
+        self.settings.add_parameter('a/initial_condition/y0', 0.1, tip='Initial magnetization direction (will be normalized to unit length)')
+        self.settings.add_parameter('a/initial_condition/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
+        
+        self.settings.add_parameter('a/applied_field', True)
+        self.settings.add_parameter('a/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        self.settings.add_parameter('a/applied_field/By', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        self.settings.add_parameter('a/applied_field/Bz', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        
+        self.settings.add_parameter('a/other_torques', True)
+        self.settings.add_parameter('a/other_torques/X', 0.0, siPrefix=True, suffix='T', tip='Exchange field parallel to domain b\'s magnetization')
+        self.settings.add_parameter('a/other_torques/s', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, parallel to domain b\'s magnetization')
+        
+        self.settings.add_parameter('a/other_torques/tx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('a/other_torques/ty', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('a/other_torques/tz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        
+        self.settings.add_parameter('a/anisotropy', True)
+        self.settings.add_parameter('a/anisotropy/Nxx', 0.01, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('a/anisotropy/Nyy', 0.10, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('a/anisotropy/Nzz', 0.89, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('a/anisotropy/Nxy', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('a/anisotropy/Nxz', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('a/anisotropy/Nyx', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('a/anisotropy/Nyz', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('a/anisotropy/Nzx', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('a/anisotropy/Nzy', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        
+        self.settings.add_parameter('a/dipole', True)
+        self.settings.add_parameter('a/dipole/Dxx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('a/dipole/Dyy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('a/dipole/Dzz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('a/dipole/Dxy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('a/dipole/Dxz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('a/dipole/Dyx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('a/dipole/Dyz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('a/dipole/Dzx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('a/dipole/Dzy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        
+        
+        
+        
+        
+        # Plot tabs
+        self.tabs         = self.grid_bottom.place_object(_g.TabArea(autosettings_path='solver.tabs.txt'), alignment=0)
+        self.tab_inspect  = self.tabs.add_tab('Inspect')
+        self.plot_inspect = self.tab_inspect.place_object(_g.DataboxPlot())
         
         # Set any supplied kwargs
         self.set(**kwargs)
+        
+        # Let's have a look
+        self.window.show()
 
     def set(self, **kwargs):
         return
 
 if __name__ == '__main__':
     
-    # Create a solver instance
-    m = solver_api(dt=0.005, steps=870)
+    # # Create a solver instance
+    # m = solver_api(dt=0.005, steps=870)
     
-    # Set up the physical parameters
-    m.set(By=10.0, gamma=_n.pi*2, dt=0.005, zzz=300, steps=270, alpha=0.1/_n.pi/2)
-    m.a.set(Bys=_n.linspace(0,2,m.steps))
-    m.set(bz0=2)
+    # # Set up the physical parameters
+    # m.set(By=10.0, gamma=_n.pi*2, dt=0.005, zzz=300, steps=270, alpha=0.1/_n.pi/2)
+    # m.a.set(Bys=_n.linspace(0,2,m.steps))
+    # m.set(bz0=2)
     
-    # Run it & plot.
-    m.run().plot()
-    m.run().plot(clear=0, t0=(m.steps-1)*m.dt)
-    m.run().plot(clear=0, t0=(m.steps-1)*m.dt*2)
+    # # Run it & plot.
+    # m.run().plot()
+    # m.run().plot(clear=0, t0=(m.steps-1)*m.dt)
+    # m.run().plot(clear=0, t0=(m.steps-1)*m.dt*2)
+    
+    self = solver()
+    
     
     
     
