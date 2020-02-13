@@ -1,6 +1,8 @@
-import ctypes as _c
-import numpy  as _n
-import os     as _os
+import ctypes  as _c
+import numpy   as _n
+import os      as _os
+import spinmob as _s
+import spinmob.egg as _egg; _g = _egg.gui
 from sys import platform as _platform
 
 
@@ -158,16 +160,17 @@ class _domain(_c.Structure):
 
 
 
-class solver():
+class solver_api():
     """
-    Class for interfacing with the compiled C-code engine.
+    Scripted interface for the solver engine. Keyword arguments are 
+    sent to self.set().
     """
     
-    def __init__(self, dt=0.005, steps=1e5):
+    def __init__(self, **kwargs):
 
         # Store the run parameters
-        self.dt    = dt
-        self.steps = steps
+        self.dt    = 0.005
+        self.steps = 1e5
         
         # Create the settings structure, and set the default values.
         self.a = _domain()
@@ -220,6 +223,8 @@ class solver():
         # By default, enable the two domains.
         self.a.mode=1
         self.b.mode=1
+        
+        self.set(**kwargs)
         
     def set(self, **kwargs): 
         """
@@ -326,19 +331,53 @@ class solver():
         if n2 is None: n2 = self.steps
 
         # Make the plot
-        import spinmob as sm
         ts = m.dt*_n.array(range(len(m.ax))) + t0
-        sm.plot.xy.data(ts, [m.ax[n1:n2],m.ay[n1:n2],m.az[n1:n2],
+        _s.plot.xy.data(ts, [m.ax[n1:n2],m.ay[n1:n2],m.az[n1:n2],
                                m.bx[n1:n2],m.by[n1:n2],m.bz[n1:n2]],
                         label=['ax','ay','az','bx','by','bz'], 
                         xlabel='Time', ylabel='Projection', **kwargs)
     
         return self
 
+class solver():
+    """
+    Graphical and scripted interface for the solver engine.
+    
+    Keyword arguments are sent to self.set()
+    """
+    
+    
+    def __init__(self, **kwargs):
+        
+        # Solver application programming interface.
+        self.api = solver_api()
+        
+        # Graphical interface
+        self.window = _g.Window(title='Macrospin(mob)', autosettings_path='solver.window.txt')
+        
+        # Top row controls for the "go" button, etc
+        self.grid_top          = self.window  .place_object(_g.GridLayout(False)) 
+        self.button_go         = self.grid_top.place_object(_g.Button('Go!'))
+        self.number_iterations = self.grid_top.place_object(_g.NumberBox(10, bounds=(0,None)))
+        self.label_iteration   = self.grid_top.place_object(_g.Label(''))
+        
+        # Bottom row controls for settings and plots.
+        self.window.new_autorow()
+        self.grid_bottom = self.window     .place_object(_g.GridLayout(False))
+        self.settings    = self.grid_bottom.place_object(_g.TreeDictionary(autosettings_path='solver.settings.txt'))
+        self.tabs        = self.grid_bottom.place_object(_g.TabArea(autosettings_path='solver.tabs.txt'))
+        self.tab_inspect = self.tabs.add_tab('Inspect')
+        
+        # Set any supplied kwargs
+        self.set(**kwargs)
+
+    def set(self, **kwargs):
+        return
+
 if __name__ == '__main__':
     
     # Create a solver instance
-    m = solver(dt=0.005, steps=870)
+    m = solver_api(dt=0.005, steps=870)
     
     # Set up the physical parameters
     m.set(By=10.0, gamma=_n.pi*2, dt=0.005, zzz=300, steps=270, alpha=0.1/_n.pi/2)
