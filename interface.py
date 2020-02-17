@@ -4,7 +4,8 @@ import os      as _os
 import spinmob as _s
 import spinmob.egg as _egg; _g = _egg.gui
 from sys import platform as _platform
-
+import traceback as _t
+_p = _t.print_last
 
 # Find the path to the compiled c-code (only Windows and Linux supported so far.)
 if _platform in ['win32']: _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine.dll')
@@ -224,6 +225,10 @@ class solver_api():
         self.a.mode=1
         self.b.mode=1
         
+        # No arrays initially
+        self.ax = self.ay = self.az = None
+        self.bx = self.by = self.bz = None
+        
         self.set(**kwargs)
         
     def set(self, **kwargs): 
@@ -344,10 +349,9 @@ class solver():
     Graphical and scripted interface for the solver engine.
     
     Keyword arguments are sent to self.set()
-    """
+    """    
     
-    
-    def __init__(self, **kwargs):
+    def __init__(self):
         
         # Solver application programming interface.
         self.api = solver_api()
@@ -358,7 +362,7 @@ class solver():
         # Top row controls for the "go" button, etc
         self.grid_top          = self.window  .place_object(_g.GridLayout(False), alignment=1) 
         self.button_go         = self.grid_top.place_object(_g.Button('Go!'))
-        self.number_iterations = self.grid_top.place_object(_g.NumberBox(10, bounds=(0,None)))
+        self.number_iterations = self.grid_top.place_object(_g.NumberBox(1, bounds=(0,None), int=True))
         self.label_iteration   = self.grid_top.place_object(_g.Label(''))
         
         # Bottom row controls for settings and plots.
@@ -370,24 +374,24 @@ class solver():
         
         self.settings.add_parameter('solver/dt',    5e-12,  dec=True,                  siPrefix=True, suffix='s')
         self.settings.add_parameter('solver/steps', 100000, dec=True, limits=(2,None), siPrefix=True, suffix='steps')
-        self.settings.add_parameter('solver/keep_resetting', False)
+        self.settings.add_parameter('solver/reset', True)
         
         self.settings.add_parameter('a/mode', 1, limits=(0,1), tip='0=disabled, 1=LLG')
         
-        self.settings.add_parameter('a/material/gamma', 1.0, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
-        self.settings.add_parameter('a/material/M',     1.760859644e11, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
+        self.settings.add_parameter('a/material/gamma', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
+        self.settings.add_parameter('a/material/M',     1.0, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
         self.settings.add_parameter('a/material/alpha', 0.01, tip='Gilbert damping parameter')        
         
         self.settings.add_parameter('a/initial_condition/x0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
         self.settings.add_parameter('a/initial_condition/y0', 0.1, tip='Initial magnetization direction (will be normalized to unit length)')
         self.settings.add_parameter('a/initial_condition/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
         
-        self.settings.add_parameter('a/applied_field', True)
+        #self.settings.add_parameter('a/applied_field', True)
         self.settings.add_parameter('a/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
         self.settings.add_parameter('a/applied_field/By', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
         self.settings.add_parameter('a/applied_field/Bz', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
         
-        self.settings.add_parameter('a/other_torques', True)
+        #self.settings.add_parameter('a/other_torques', True)
         self.settings.add_parameter('a/other_torques/X', 0.0, siPrefix=True, suffix='T', tip='Exchange field parallel to domain b\'s magnetization')
         self.settings.add_parameter('a/other_torques/s', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, parallel to domain b\'s magnetization')
         
@@ -395,7 +399,7 @@ class solver():
         self.settings.add_parameter('a/other_torques/ty', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
         self.settings.add_parameter('a/other_torques/tz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
         
-        self.settings.add_parameter('a/anisotropy', True)
+        #self.settings.add_parameter('a/anisotropy', True)
         self.settings.add_parameter('a/anisotropy/Nxx', 0.01, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         self.settings.add_parameter('a/anisotropy/Nyy', 0.10, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         self.settings.add_parameter('a/anisotropy/Nzz', 0.89, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
@@ -406,7 +410,7 @@ class solver():
         self.settings.add_parameter('a/anisotropy/Nzx', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         self.settings.add_parameter('a/anisotropy/Nzy', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         
-        self.settings.add_parameter('a/dipole', True)
+        #self.settings.add_parameter('a/dipole', True)
         self.settings.add_parameter('a/dipole/Dxx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
         self.settings.add_parameter('a/dipole/Dyy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
         self.settings.add_parameter('a/dipole/Dzz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
@@ -417,20 +421,149 @@ class solver():
         self.settings.add_parameter('a/dipole/Dzx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
         self.settings.add_parameter('a/dipole/Dzy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
         
+        self.settings.add_parameter('b/mode', 1, limits=(0,1), tip='0=disabled, 1=LLG')
         
+        self.settings.add_parameter('b/material/gamma', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
+        self.settings.add_parameter('b/material/M',     1.0, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
+        self.settings.add_parameter('b/material/alpha', 0.01, tip='Gilbert damping parameter')        
         
+        self.settings.add_parameter('b/initial_condition/x0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
+        self.settings.add_parameter('b/initial_condition/y0', 0.1, tip='Initial magnetization direction (will be normalized to unit length)')
+        self.settings.add_parameter('b/initial_condition/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
         
+        #self.settings.add_parameter('b/applied_field', True)
+        self.settings.add_parameter('b/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        self.settings.add_parameter('b/applied_field/By', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        self.settings.add_parameter('b/applied_field/Bz', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
+        
+        #self.settings.add_parameter('b/other_torques', True)
+        self.settings.add_parameter('b/other_torques/X', 0.0, siPrefix=True, suffix='T', tip='Exchange field parallel to domain b\'s magnetization')
+        self.settings.add_parameter('b/other_torques/s', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, parallel to domain b\'s magnetization')
+        
+        self.settings.add_parameter('b/other_torques/tx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('b/other_torques/ty', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('b/other_torques/tz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        
+        #self.settings.add_parameter('b/anisotropy', True)
+        self.settings.add_parameter('b/anisotropy/Nxx', 0.01, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('b/anisotropy/Nyy', 0.10, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('b/anisotropy/Nzz', 0.89, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('b/anisotropy/Nxy', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('b/anisotropy/Nxz', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('b/anisotropy/Nyx', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('b/anisotropy/Nyz', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('b/anisotropy/Nzx', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        self.settings.add_parameter('b/anisotropy/Nzy', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
+        
+        #self.settings.add_parameter('b/dipole', True)
+        self.settings.add_parameter('b/dipole/Dxx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('b/dipole/Dyy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('b/dipole/Dzz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('b/dipole/Dxy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('b/dipole/Dxz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('b/dipole/Dyx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('b/dipole/Dyz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('b/dipole/Dzx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        self.settings.add_parameter('b/dipole/Dzy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
+        
+        # When one of the settings changes, make sure to update the solver_api
+        self.settings.connect_any_signal_changed(self._setting_changed)
         
         # Plot tabs
         self.tabs         = self.grid_bottom.place_object(_g.TabArea(autosettings_path='solver.tabs.txt'), alignment=0)
         self.tab_inspect  = self.tabs.add_tab('Inspect')
-        self.plot_inspect = self.tab_inspect.place_object(_g.DataboxPlot())
+        self.plot_inspect = self.tab_inspect.place_object(_g.DataboxPlot(), alignment=0)
+        self.plot_inspect['t'] = []
+        self.plot_inspect['ax'] = []
+        self.plot_inspect['ay'] = []
+        self.plot_inspect['az'] = []
+        self.plot_inspect['bx'] = []
+        self.plot_inspect['by'] = []
+        self.plot_inspect['bz'] = []
         
-        # Set any supplied kwargs
-        self.set(**kwargs)
         
-        # Let's have a look
+        
+        # Dump all the (autoloaded already) settings to the API
+        for k in self.settings.keys():
+            s = k.split('/')
+            self._set_domain_parameter(s[0], s[-1], self.settings[k])
+        
+        # Connect the other controls
+        self.button_go.signal_clicked.connect(self.button_go_clicked)
+        
+        # Let's have a look!
         self.window.show()
+
+    def button_go_clicked(*a):
+        """
+        Go button pressed: Run the simulation!
+        """
+
+        for n in range(self.number_iterations.get_value()):
+            self.label_iteration.set_text(str(n+1))
+            self.go(self.settings['solver/reset'])
+        
+
+
+    def go(self, reset=False):
+        """
+        Run the specified simulation.
+        
+        Parameters
+        ----------
+        reset=False
+            After the run, update the initial conditions to match the 
+            last point calculated.
+        """
+        
+        # Run it.
+        self.api.run(not self.settings['solver/reset'])
+        
+        # Transfer to the initial condition
+        self.settings['a/initial_condition/x0'] = self.api.a.x0
+        self.settings['a/initial_condition/y0'] = self.api.a.y0
+        self.settings['a/initial_condition/z0'] = self.api.a.z0
+        self.settings['b/initial_condition/x0'] = self.api.b.x0
+        self.settings['b/initial_condition/y0'] = self.api.b.y0
+        self.settings['b/initial_condition/z0'] = self.api.b.z0
+        
+        # Transfer the results to the inspector
+        self.plot_inspect['t']  = self.api.dt*_n.array(range(self.api.steps))
+        self.plot_inspect['ax'] = self.api.ax
+        self.plot_inspect['ay'] = self.api.ay
+        self.plot_inspect['az'] = self.api.az
+        self.plot_inspect['bx'] = self.api.bx
+        self.plot_inspect['by'] = self.api.by
+        self.plot_inspect['bz'] = self.api.bz
+        self.plot_inspect.plot()
+        self.window.process_events()
+    
+
+        
+
+    def _setting_changed(*a):
+        """
+        Called whenever settings are changed.
+        """
+        
+        # Get the associated item name and value
+        domain    = a[1].name()
+        parameter = a[2][0][0].name()
+        value     = a[2][0][2]
+        self._set_domain_parameter(domain, parameter, value)
+        
+    def _set_domain_parameter(self, domain, parameter, value):
+        """
+        Sets the value given domain and parameter.
+        """
+        # Come up with the command to execute
+        if domain=='solver': command =            'self.api.set('+parameter+'='+str(value)+')'
+        else:                command = 'self.api.'+domain+'.set('+parameter+'='+str(value)+')'   
+        
+        # Try it!
+        try:    exec(command, dict(self=self))
+        except: print('FAIL: "'+command+'"')
+        
 
     def set(self, **kwargs):
         return

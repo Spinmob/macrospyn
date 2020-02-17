@@ -24,7 +24,7 @@
 #include <math.h>
 #include <time.h>
 
-int log_level=0;
+int log_level=3;
 FILE *log_file;
 
 ///////////////////////////////
