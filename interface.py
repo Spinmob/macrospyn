@@ -357,7 +357,7 @@ class solver():
         self.api = solver_api()
         
         # Graphical interface
-        self.window = _g.Window(title='Macrospin(mob)', autosettings_path='solver.window.txt')
+        self.window = _g.Window(title='Macrospin(mob)', autosettings_path='solver.window.txt', size=[1000,550])
         
         # Top row controls for the "go" button, etc
         self.grid_top          = self.window  .place_object(_g.GridLayout(False), alignment=1) 
@@ -372,8 +372,8 @@ class solver():
         # Settings
         self.settings     = self.grid_bottom.place_object(_g.TreeDictionary(autosettings_path='solver.settings.txt'))
         
-        self.settings.add_parameter('solver/dt',    5e-12,  dec=True,                  siPrefix=True, suffix='s')
-        self.settings.add_parameter('solver/steps', 100000, dec=True, limits=(2,None), siPrefix=True, suffix='steps')
+        self.settings.add_parameter('solver/dt',    1e-12, dec=True,                  siPrefix=True, suffix='s')
+        self.settings.add_parameter('solver/steps', 5000,  dec=True, limits=(2,None), siPrefix=True, suffix='steps')
         self.settings.add_parameter('solver/reset', True)
         
         self.settings.add_parameter('a/mode', 1, limits=(0,1), tip='0=disabled, 1=LLG')
@@ -471,6 +471,8 @@ class solver():
         
         # Plot tabs
         self.tabs         = self.grid_bottom.place_object(_g.TabArea(autosettings_path='solver.tabs.txt'), alignment=0)
+        
+        # Inspection plot for all arrays
         self.tab_inspect  = self.tabs.add_tab('Inspect')
         self.plot_inspect = self.tab_inspect.place_object(_g.DataboxPlot(), alignment=0)
         self.plot_inspect['t'] = []
@@ -481,6 +483,12 @@ class solver():
         self.plot_inspect['by'] = []
         self.plot_inspect['bz'] = []
         
+        # 3D plot
+        self.tab_3d = self.tabs.add_tab('3D')
+        self.button_3d_a = self.tab_3d.place_object(_g.Button('a', checkable=True, checked=True)) 
+        self.button_3d_b = self.tab_3d.place_object(_g.Button('b', checkable=True, checked=True)) 
+        self.tab_3d.new_autorow()
+        #self.plot_3d = self.tab_3d.place_object()
         
         
         # Dump all the (autoloaded already) settings to the API

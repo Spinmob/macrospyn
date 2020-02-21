@@ -162,14 +162,14 @@ void D(domain *a, domain *b, int n, double dt, double *dx, double *dy, double *d
     double vx, vy, vz; // Total non-damping torque [rad/sec]
 
     // First let's calculate the aNisotropy field
-    Nx = a->M*(a->Nxx*a->x[n] + a->Nxy*a->y[n] + a->Nxz*a->z[n]);
-    Ny = a->M*(a->Nyy*a->y[n] + a->Nyz*a->z[n] + a->Nyx*a->x[n]);
-    Nz = a->M*(a->Nzz*a->z[n] + a->Nzx*a->x[n] + a->Nzy*a->y[n]);
+    Nx = -a->M*(a->Nxx*a->x[n] + a->Nxy*a->y[n] + a->Nxz*a->z[n]);
+    Ny = -a->M*(a->Nyy*a->y[n] + a->Nyz*a->z[n] + a->Nyx*a->x[n]);
+    Nz = -a->M*(a->Nzz*a->z[n] + a->Nzx*a->x[n] + a->Nzy*a->y[n]);
     
     // Now the Dipolar field from b
-    Dx = b->M*(a->Dxx*b->x[n] + a->Dxy*b->y[n] + a->Dxz*b->z[n]);
-    Dy = b->M*(a->Dyy*b->y[n] + a->Dyz*b->z[n] + a->Dyx*b->x[n]);
-    Dz = b->M*(a->Dzz*b->z[n] + a->Dzx*b->x[n] + a->Dzy*b->y[n]);
+    Dx = -b->M*(a->Dxx*b->x[n] + a->Dxy*b->y[n] + a->Dxz*b->z[n]);
+    Dy = -b->M*(a->Dyy*b->y[n] + a->Dyz*b->z[n] + a->Dyx*b->x[n]);
+    Dz = -b->M*(a->Dzz*b->z[n] + a->Dzx*b->x[n] + a->Dzy*b->y[n]);
     
     // Now the eXchange field from b
     Xx = a->X*b->x[n];
