@@ -3,6 +3,8 @@ import numpy   as _n
 import os      as _os
 import spinmob as _s
 import spinmob.egg as _egg; _g = _egg.gui
+import pyqtgraph.opengl as _gl
+import pyqtgraph        as _pg
 from sys import platform as _platform
 import traceback as _t
 _p = _t.print_last
@@ -170,8 +172,8 @@ class solver_api():
     def __init__(self, **kwargs):
 
         # Store the run parameters
-        self.dt    = 0.005
-        self.steps = 1e5
+        self.dt    = 1e-12
+        self.steps = 1e3
         
         # Create the settings structure, and set the default values.
         self.a = _domain()
@@ -314,35 +316,6 @@ class solver_api():
         
         return self
 
-    def plot(self, n1=0, n2=None, t0=0, **kwargs):
-        """
-        Creates a plot for inspecting trajectories.
-        
-
-        Parameters
-        ----------
-        n1=0, n2=None
-            Start and stop indices respectively.
-        
-        **kwargs
-            These are sent to spinmob.plot.xy.data().
-        
-        Returns
-        -------
-        self
-
-        """
-        # Find the upper index if needed
-        if n2 is None: n2 = self.steps
-
-        # Make the plot
-        ts = self.dt*_n.array(range(len(self.ax))) + t0
-        _s.plot.xy.data(ts, [self.ax[n1:n2],self.ay[n1:n2],self.az[n1:n2],
-                             self.bx[n1:n2],self.by[n1:n2],self.bz[n1:n2]],
-                        label=['ax','ay','az','bx','by','bz'], 
-                        xlabel='Time', ylabel='Projection', **kwargs)
-    
-        return self
 
 class solver():
     """
@@ -383,7 +356,7 @@ class solver():
         self.settings.add_parameter('a/material/alpha', 0.01, tip='Gilbert damping parameter')        
         
         self.settings.add_parameter('a/initial_condition/x0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
-        self.settings.add_parameter('a/initial_condition/y0', 0.1, tip='Initial magnetization direction (will be normalized to unit length)')
+        self.settings.add_parameter('a/initial_condition/y0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
         self.settings.add_parameter('a/initial_condition/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
         
         #self.settings.add_parameter('a/applied_field', True)
@@ -427,8 +400,8 @@ class solver():
         self.settings.add_parameter('b/material/M',     1.0, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
         self.settings.add_parameter('b/material/alpha', 0.01, tip='Gilbert damping parameter')        
         
-        self.settings.add_parameter('b/initial_condition/x0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
-        self.settings.add_parameter('b/initial_condition/y0', 0.1, tip='Initial magnetization direction (will be normalized to unit length)')
+        self.settings.add_parameter('b/initial_condition/x0',-1.0, tip='Initial magnetization direction (will be normalized to unit length)')
+        self.settings.add_parameter('b/initial_condition/y0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
         self.settings.add_parameter('b/initial_condition/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
         
         #self.settings.add_parameter('b/applied_field', True)
@@ -487,9 +460,44 @@ class solver():
         self.tab_3d = self.tabs.add_tab('3D')
         self.button_3d_a = self.tab_3d.place_object(_g.Button('a', checkable=True, checked=True)) 
         self.button_3d_b = self.tab_3d.place_object(_g.Button('b', checkable=True, checked=True)) 
+        self.button_plot_3d = self.tab_3d.place_object(_g.Button('Update Plot'))
         self.tab_3d.new_autorow()
-        #self.plot_3d = self.tab_3d.place_object()
         
+        # Make the 3D plot window
+        self._widget_3d = _gl.GLViewWidget()
+        self._widget_3d.opts['distance'] = 50
+        
+        # Make the grids
+        self._gridx_3d = _gl.GLGridItem()
+        self._gridx_3d.rotate(90,0,1,0)
+        self._gridx_3d.translate(-10,0,0)
+        self._widget_3d.addItem(self._gridx_3d)
+        self._gridy_3d = _gl.GLGridItem()
+        self._gridy_3d.rotate(90,1,0,0)
+        self._gridy_3d.translate(0,-10,0)
+        self._widget_3d.addItem(self._gridy_3d)
+        self._gridz_3d = _gl.GLGridItem()
+        self._gridz_3d.translate(0,0,-10)
+        self._widget_3d.addItem(self._gridz_3d)
+        
+        # Trajectories
+        color_a = _pg.glColor(100,100,255)
+        color_b = _pg.glColor(255,100,100)
+        self._trajectory_a_3d = _gl.GLLinePlotItem(color=color_a, width=2., antialias=True)
+        self._trajectory_b_3d = _gl.GLLinePlotItem(color=color_b, width=2., antialias=True)
+        self._widget_3d.addItem(self._trajectory_a_3d)
+        self._widget_3d.addItem(self._trajectory_b_3d)
+        
+        # Other items
+        self._start_dot_a_3d = _gl.GLScatterPlotItem(color=color_a, size=7.0, pos=_n.array([[10,0,0]]))
+        self._start_dot_b_3d = _gl.GLScatterPlotItem(color=color_b, size=7.0, pos=_n.array([[-10,0,0]]))
+        self._widget_3d.addItem(self._start_dot_a_3d)
+        self._widget_3d.addItem(self._start_dot_b_3d)
+        self._update_start_dots()
+        
+        # Add the 3D plot window to the tab
+        self.tab_3d.place_object(self._widget_3d, column_span=4, alignment=0)
+        self.tab_3d.set_column_stretch(3)
         
         # Dump all the (autoloaded already) settings to the API
         for k in self.settings.keys():
@@ -497,10 +505,29 @@ class solver():
             self._set_domain_parameter(s[0], s[-1], self.settings[k])
         
         # Connect the other controls
-        self.button_go.signal_clicked.connect(self.button_go_clicked)
+        self.button_go     .signal_clicked.connect(self.button_go_clicked)
+        self.button_plot_3d.signal_clicked.connect(self.button_plot_3d_clicked)
         
         # Let's have a look!
         self.window.show()
+
+    def _update_start_dots(self):
+        """
+        Gets the initial condition from the settings and updates the start
+        dot positions.
+        """
+        ax = self.settings['a/initial_condition/x0']
+        ay = self.settings['a/initial_condition/y0']
+        az = self.settings['a/initial_condition/z0']
+        an = 1.0/_n.sqrt(ax*ax+ay*ay+az*az)
+        
+        bx = self.settings['b/initial_condition/x0']
+        by = self.settings['b/initial_condition/y0']
+        bz = self.settings['b/initial_condition/z0']
+        bn = 1.0/_n.sqrt(bx*bx+by*by+bz*bz)
+        
+        self._start_dot_a_3d.setData(pos=10*_n.array([[ax*an, ay*an, az*an]]))
+        self._start_dot_b_3d.setData(pos=10*_n.array([[bx*bn, by*bn, bz*bn]]))
 
     def button_go_clicked(*a):
         """
@@ -510,9 +537,19 @@ class solver():
         for n in range(self.number_iterations.get_value()):
             self.label_iteration.set_text(str(n+1))
             self.go(self.settings['solver/reset'])
+            self.button_plot_3d_clicked()
+            
+    def button_plot_3d_clicked(*a):
+        """
+        Plot 3d button pressed: Update the plot!
+        """
+        d = self.plot_inspect
+        if self.button_3d_a.is_checked(): self._trajectory_a_3d.setData(pos=10*_n.vstack([d['ax'],d['ay'],d['az']]).transpose())
+        if self.button_3d_b.is_checked(): self._trajectory_b_3d.setData(pos=10*_n.vstack([d['bx'],d['by'],d['bz']]).transpose())
         
-
-
+        self.window.process_events()
+        
+        
     def go(self, reset=False):
         """
         Run the specified simulation.
@@ -544,6 +581,7 @@ class solver():
         self.plot_inspect['by'] = self.api.by
         self.plot_inspect['bz'] = self.api.bz
         self.plot_inspect.plot()
+        
         self.window.process_events()
     
 
@@ -559,6 +597,9 @@ class solver():
         parameter = a[2][0][0].name()
         value     = a[2][0][2]
         self._set_domain_parameter(domain, parameter, value)
+        
+        # Update the start dots
+        self._update_start_dots()
         
     def _set_domain_parameter(self, domain, parameter, value):
         """
