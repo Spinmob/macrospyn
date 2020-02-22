@@ -24,7 +24,7 @@
 #include <math.h>
 #include <time.h>
 
-int log_level=3;
+int log_level=0;
 FILE *log_file;
 
 ///////////////////////////////
@@ -53,12 +53,12 @@ typedef struct domain {
     double X, *Xs; 
 
     // Spin transfer torque (rate) parallel to other domain [rad / s]
-    double s, *ss;
+    double STT, *STTs;
 
     // Other torque (rate) unrelated to either domain [rad / s]
-    double tx, *txs;
-    double ty, *tys; 
-    double tz, *tzs; 
+    double Tx, *Txs;
+    double Ty, *Tys; 
+    double Tz, *Tzs; 
 
     // Applied field components [T]
     double Bx, *Bxs;
@@ -105,15 +105,15 @@ void get_input_parameters(domain *a, int n) {
     if(a->Ms     != NULL) a->M     = a->Ms[n];     // magnetization
     if(a->alphas != NULL) a->alpha = a->alphas[n]; // damping
     if(a->Xs     != NULL) a->X     = a->Xs[n];     // exchange
-    if(a->ss     != NULL) a->s     = a->ss[n];     // spin torque
+    if(a->STTs   != NULL) a->STT   = a->STTs[n];     // spin torque
     
     if(a->Bxs != NULL) a->Bx = a->Bxs[n]; // applied field
     if(a->Bys != NULL) a->By = a->Bys[n];
     if(a->Bzs != NULL) a->Bz = a->Bzs[n];
 
-    if(a->txs != NULL) a->tx = a->txs[n]; // applied torque
-    if(a->tys != NULL) a->ty = a->tys[n];
-    if(a->tzs != NULL) a->tz = a->tzs[n];
+    if(a->Txs != NULL) a->Tx = a->Txs[n]; // applied torque
+    if(a->Tys != NULL) a->Ty = a->Tys[n];
+    if(a->Tzs != NULL) a->Tz = a->Tzs[n];
 
     if(a->Nxxs != NULL) a->Nxx = a->Nxxs[n]; // anisotropy
     if(a->Nxys != NULL) a->Nxy = a->Nxys[n];
@@ -177,9 +177,9 @@ void D(domain *a, domain *b, int n, double dt, double *dx, double *dy, double *d
     Xz = a->X*b->z[n];
 
     // Now we can get the components of T
-    Tx = -a->gamma*(a->Bx+Nx+Dx+Xx) + a->s*(a->z[n]*b->y[n] - a->y[n]*b->z[n]) + a->z[n]*a->ty - a->y[n]*a->tz;
-    Ty = -a->gamma*(a->By+Ny+Dy+Xy) + a->s*(a->x[n]*b->z[n] - a->z[n]*b->x[n]) + a->x[n]*a->tz - a->z[n]*a->tx;
-    Tz = -a->gamma*(a->Bz+Nz+Dz+Xz) + a->s*(a->y[n]*b->x[n] - a->x[n]*b->y[n]) + a->y[n]*a->tx - a->x[n]*a->ty;
+    Tx = -a->gamma*(a->Bx+Nx+Dx+Xx) + a->STT*(a->z[n]*b->y[n] - a->y[n]*b->z[n]) + a->z[n]*a->Ty - a->y[n]*a->Tz;
+    Ty = -a->gamma*(a->By+Ny+Dy+Xy) + a->STT*(a->x[n]*b->z[n] - a->z[n]*b->x[n]) + a->x[n]*a->Tz - a->z[n]*a->Tx;
+    Tz = -a->gamma*(a->Bz+Nz+Dz+Xz) + a->STT*(a->y[n]*b->x[n] - a->x[n]*b->y[n]) + a->y[n]*a->Tx - a->x[n]*a->Ty;
     
     // Now we can compute the total non-damping torque for this step.
     vx = a->y[n]*Tz - a->z[n]*Ty; 
@@ -203,7 +203,7 @@ void log_step(domain *a, domain *b, int n) {
     fprintf(log_file, "  a->M=%f,     pointer=%p\n",     a->M,     a->Ms);
     fprintf(log_file, "  a->alpha=%f, pointer=%p\n",     a->alpha, a->alphas);
     fprintf(log_file, "  a->X=%f,     pointer=%p\n",     a->X,     a->Xs);
-    fprintf(log_file, "  a->s=%f,     pointer=%p\n",     a->s,     a->ss);
+    fprintf(log_file, "  a->STT=%f,   pointer=%p\n",     a->STT,   a->STTs);
 
     fprintf(log_file, "\n");
 }

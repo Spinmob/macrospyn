@@ -16,6 +16,9 @@ else:                      _path_dll = _os.path.join(_os.path.split(__file__)[0]
 # Get the engine.
 _engine = _c.cdll.LoadLibrary(_path_dll)
 
+
+## TO DO: Get check boxes working!
+
 def to_pointer_double(numpy_array): 
     """
     Converts the supplied numpy_array (assumed to be the usual 64-bit float)
@@ -69,12 +72,12 @@ class _domain(_c.Structure):
         ('X', _c.c_double), ('_Xs', _c.POINTER(_c.c_double)),
         
         # Spin transfer torque (rate) parallel to other domain [rad / s]
-        ('s', _c.c_double), ('_ss', _c.POINTER(_c.c_double)),
+        ('STT', _c.c_double), ('_STTs', _c.POINTER(_c.c_double)),
         
         # Other torque (rate) unrelated to either domain [rad / s]
-        ('tx', _c.c_double), ('_txs', _c.POINTER(_c.c_double)),
-        ('ty', _c.c_double), ('_tys', _c.POINTER(_c.c_double)),
-        ('tz', _c.c_double), ('_tzs', _c.POINTER(_c.c_double)),
+        ('Tx', _c.c_double), ('_Txs', _c.POINTER(_c.c_double)),
+        ('Ty', _c.c_double), ('_Tys', _c.POINTER(_c.c_double)),
+        ('Tz', _c.c_double), ('_Tzs', _c.POINTER(_c.c_double)),
         
         # Externally applied field
         ('Bx', _c.c_double), ('_Bxs', _c.POINTER(_c.c_double)),
@@ -193,15 +196,15 @@ class solver_api():
         self.a._Ms     = self.b._Ms     = None
         self.a._alphas = self.b._alphas = None
         self.a._Xs     = self.b._Xs     = None
-        self.a._ss     = self.b._ss     = None
+        self.a._STTs   = self.b._STTs   = None
         
         self.a._Bxs    = self.b._Bxs    = None
         self.a._Bys    = self.b._Bys    = None
         self.a._Bzs    = self.b._Bzs    = None
         
-        self.a._txs    = self.b._txs    = None
-        self.a._tys    = self.b._tys    = None
-        self.a._tzs    = self.b._tzs    = None
+        self.a._Txs    = self.b._Txs    = None
+        self.a._Tys    = self.b._Tys    = None
+        self.a._Tzs    = self.b._Tzs    = None
         
         self.a._Nxxs   = self.b._Nxxs   = None
         self.a._Nxys   = self.b._Nxys   = None
@@ -351,28 +354,28 @@ class solver():
         
         self.settings.add_parameter('a/mode', 1, limits=(0,1), tip='0=disabled, 1=LLG')
         
-        self.settings.add_parameter('a/material/gamma', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
-        self.settings.add_parameter('a/material/M',     1.0, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
-        self.settings.add_parameter('a/material/alpha', 0.01, tip='Gilbert damping parameter')        
-        
         self.settings.add_parameter('a/initial_condition/x0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
         self.settings.add_parameter('a/initial_condition/y0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
         self.settings.add_parameter('a/initial_condition/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
         
-        #self.settings.add_parameter('a/applied_field', True)
+        self.settings.add_parameter('a/material/gamma', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
+        self.settings.add_parameter('a/material/M',     1.0, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
+        self.settings.add_parameter('a/material/alpha', 0.01, tip='Gilbert damping parameter')        
+        
+        self.settings.add_parameter('a/applied_field', True)
         self.settings.add_parameter('a/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
         self.settings.add_parameter('a/applied_field/By', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
         self.settings.add_parameter('a/applied_field/Bz', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
         
-        #self.settings.add_parameter('a/other_torques', True)
+        self.settings.add_parameter('a/other_torques', True)
         self.settings.add_parameter('a/other_torques/X', 0.0, siPrefix=True, suffix='T', tip='Exchange field parallel to domain b\'s magnetization')
-        self.settings.add_parameter('a/other_torques/s', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, parallel to domain b\'s magnetization')
+        self.settings.add_parameter('a/other_torques/STT', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, parallel to domain b\'s magnetization')
         
-        self.settings.add_parameter('a/other_torques/tx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('a/other_torques/ty', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('a/other_torques/tz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('a/other_torques/Tx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('a/other_torques/Ty', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('a/other_torques/Tz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
         
-        #self.settings.add_parameter('a/anisotropy', True)
+        self.settings.add_parameter('a/anisotropy', True)
         self.settings.add_parameter('a/anisotropy/Nxx', 0.01, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         self.settings.add_parameter('a/anisotropy/Nyy', 0.10, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         self.settings.add_parameter('a/anisotropy/Nzz', 0.89, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
@@ -383,7 +386,7 @@ class solver():
         self.settings.add_parameter('a/anisotropy/Nzx', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         self.settings.add_parameter('a/anisotropy/Nzy', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         
-        #self.settings.add_parameter('a/dipole', True)
+        self.settings.add_parameter('a/dipole', True)
         self.settings.add_parameter('a/dipole/Dxx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
         self.settings.add_parameter('a/dipole/Dyy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
         self.settings.add_parameter('a/dipole/Dzz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
@@ -396,28 +399,28 @@ class solver():
         
         self.settings.add_parameter('b/mode', 1, limits=(0,1), tip='0=disabled, 1=LLG')
         
-        self.settings.add_parameter('b/material/gamma', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
-        self.settings.add_parameter('b/material/M',     1.0, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
-        self.settings.add_parameter('b/material/alpha', 0.01, tip='Gilbert damping parameter')        
-        
         self.settings.add_parameter('b/initial_condition/x0',-1.0, tip='Initial magnetization direction (will be normalized to unit length)')
         self.settings.add_parameter('b/initial_condition/y0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
         self.settings.add_parameter('b/initial_condition/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
         
-        #self.settings.add_parameter('b/applied_field', True)
+        self.settings.add_parameter('b/material/gamma', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
+        self.settings.add_parameter('b/material/M',     1.0, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
+        self.settings.add_parameter('b/material/alpha', 0.01, tip='Gilbert damping parameter')        
+        
+        self.settings.add_parameter('b/applied_field', True)
         self.settings.add_parameter('b/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
         self.settings.add_parameter('b/applied_field/By', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
         self.settings.add_parameter('b/applied_field/Bz', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
         
-        #self.settings.add_parameter('b/other_torques', True)
+        self.settings.add_parameter('b/other_torques', True)
         self.settings.add_parameter('b/other_torques/X', 0.0, siPrefix=True, suffix='T', tip='Exchange field parallel to domain b\'s magnetization')
-        self.settings.add_parameter('b/other_torques/s', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, parallel to domain b\'s magnetization')
+        self.settings.add_parameter('b/other_torques/STT', 0.0, siPrefix=True, suffix='rad/s', tip='Spin-transfer-like torque, parallel to domain b\'s magnetization')
         
-        self.settings.add_parameter('b/other_torques/tx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('b/other_torques/ty', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
-        self.settings.add_parameter('b/other_torques/tz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('b/other_torques/Tx', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('b/other_torques/Ty', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
+        self.settings.add_parameter('b/other_torques/Tz', 0.0, siPrefix=True, suffix='rad/s', tip='Other externally applied torque')
         
-        #self.settings.add_parameter('b/anisotropy', True)
+        self.settings.add_parameter('b/anisotropy', True)
         self.settings.add_parameter('b/anisotropy/Nxx', 0.01, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         self.settings.add_parameter('b/anisotropy/Nyy', 0.10, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         self.settings.add_parameter('b/anisotropy/Nzz', 0.89, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
@@ -428,7 +431,7 @@ class solver():
         self.settings.add_parameter('b/anisotropy/Nzx', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         self.settings.add_parameter('b/anisotropy/Nzy', 0.0, tip='Anisotropy matrix (diagonal matrix has values adding to 1)')
         
-        #self.settings.add_parameter('b/dipole', True)
+        self.settings.add_parameter('b/dipole', True)
         self.settings.add_parameter('b/dipole/Dxx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
         self.settings.add_parameter('b/dipole/Dyy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
         self.settings.add_parameter('b/dipole/Dzz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
@@ -438,9 +441,6 @@ class solver():
         self.settings.add_parameter('b/dipole/Dyz', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
         self.settings.add_parameter('b/dipole/Dzx', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
         self.settings.add_parameter('b/dipole/Dzy', 0.0, tip='Dipolar field matrix exerted by domain b, expressed\nas a fraction of b\'s saturation magnetization.')
-        
-        # When one of the settings changes, make sure to update the solver_api
-        self.settings.connect_any_signal_changed(self._setting_changed)
         
         # Plot tabs
         self.tabs         = self.grid_bottom.place_object(_g.TabArea(autosettings_path='solver.tabs.txt'), alignment=0)
@@ -458,8 +458,9 @@ class solver():
         
         # 3D plot
         self.tab_3d = self.tabs.add_tab('3D')
-        self.button_3d_a = self.tab_3d.place_object(_g.Button('a', checkable=True, checked=True)) 
-        self.button_3d_b = self.tab_3d.place_object(_g.Button('b', checkable=True, checked=True)) 
+        self.button_3d_a   = self.tab_3d.place_object(_g.Button('a',   checkable=True, checked=True)) 
+        self.button_3d_b   = self.tab_3d.place_object(_g.Button('b',   checkable=True, checked=True)) 
+        self.button_3d_sum = self.tab_3d.place_object(_g.Button('Sum', checkable=True, checked=True)) 
         self.button_plot_3d = self.tab_3d.place_object(_g.Button('Update Plot'))
         self.tab_3d.new_autorow()
         
@@ -483,16 +484,21 @@ class solver():
         # Trajectories
         color_a = _pg.glColor(100,100,255)
         color_b = _pg.glColor(255,100,100)
-        self._trajectory_a_3d = _gl.GLLinePlotItem(color=color_a, width=2., antialias=True)
-        self._trajectory_b_3d = _gl.GLLinePlotItem(color=color_b, width=2., antialias=True)
+        color_n = _pg.glColor(50,255,255)
+        self._trajectory_a_3d   = _gl.GLLinePlotItem(color=color_a, width=2.5, antialias=True)
+        self._trajectory_b_3d   = _gl.GLLinePlotItem(color=color_b, width=2.5, antialias=True)
+        self._trajectory_sum_3d = _gl.GLLinePlotItem(color=color_n, width=2.5, antialias=True)
         self._widget_3d.addItem(self._trajectory_a_3d)
         self._widget_3d.addItem(self._trajectory_b_3d)
+        self._widget_3d.addItem(self._trajectory_sum_3d)
         
         # Other items
-        self._start_dot_a_3d = _gl.GLScatterPlotItem(color=color_a, size=7.0, pos=_n.array([[10,0,0]]))
-        self._start_dot_b_3d = _gl.GLScatterPlotItem(color=color_b, size=7.0, pos=_n.array([[-10,0,0]]))
+        self._start_dot_a_3d   = _gl.GLScatterPlotItem(color=color_a, size=7.0, pos=_n.array([[10,0,0]]))
+        self._start_dot_b_3d   = _gl.GLScatterPlotItem(color=color_b, size=7.0, pos=_n.array([[-10,0,0]]))
+        self._start_dot_sum_3d = _gl.GLScatterPlotItem(color=color_n, size=7.0, pos=_n.array([[-10,0,0]]))
         self._widget_3d.addItem(self._start_dot_a_3d)
         self._widget_3d.addItem(self._start_dot_b_3d)
+        self._widget_3d.addItem(self._start_dot_sum_3d)
         self._update_start_dots()
         
         # Add the 3D plot window to the tab
@@ -504,9 +510,14 @@ class solver():
             s = k.split('/')
             self._set_domain_parameter(s[0], s[-1], self.settings[k])
         
+        # When one of the settings changes, make sure to update the solver_api
+        self.settings.connect_any_signal_changed(self._setting_changed)
+        
         # Connect the other controls
         self.button_go     .signal_clicked.connect(self.button_go_clicked)
         self.button_plot_3d.signal_clicked.connect(self.button_plot_3d_clicked)
+        
+        
         
         # Let's have a look!
         self.window.show()
@@ -520,14 +531,22 @@ class solver():
         ay = self.settings['a/initial_condition/y0']
         az = self.settings['a/initial_condition/z0']
         an = 1.0/_n.sqrt(ax*ax+ay*ay+az*az)
+        ax = ax*an
+        ay = ay*an
+        az = az*an
+        
         
         bx = self.settings['b/initial_condition/x0']
         by = self.settings['b/initial_condition/y0']
         bz = self.settings['b/initial_condition/z0']
         bn = 1.0/_n.sqrt(bx*bx+by*by+bz*bz)
+        bx = bx*bn
+        by = by*bn
+        bz = bz*bn
         
-        self._start_dot_a_3d.setData(pos=10*_n.array([[ax*an, ay*an, az*an]]))
-        self._start_dot_b_3d.setData(pos=10*_n.array([[bx*bn, by*bn, bz*bn]]))
+        self._start_dot_a_3d  .setData(pos=10*_n.array([[ax, ay, az]]))
+        self._start_dot_b_3d  .setData(pos=10*_n.array([[bx, by, bz]]))
+        self._start_dot_sum_3d.setData(pos=10*_n.array([[ax+bx, ay+by, az+bz]]))
 
     def button_go_clicked(*a):
         """
@@ -544,8 +563,9 @@ class solver():
         Plot 3d button pressed: Update the plot!
         """
         d = self.plot_inspect
-        if self.button_3d_a.is_checked(): self._trajectory_a_3d.setData(pos=10*_n.vstack([d['ax'],d['ay'],d['az']]).transpose())
-        if self.button_3d_b.is_checked(): self._trajectory_b_3d.setData(pos=10*_n.vstack([d['bx'],d['by'],d['bz']]).transpose())
+        if self.button_3d_a.is_checked():   self._trajectory_a_3d  .setData(pos=10*_n.vstack([d['ax'],d['ay'],d['az']]).transpose())
+        if self.button_3d_b.is_checked():   self._trajectory_b_3d  .setData(pos=10*_n.vstack([d['bx'],d['by'],d['bz']]).transpose())
+        if self.button_3d_sum.is_checked(): self._trajectory_sum_3d.setData(pos=10*_n.vstack([d['ax']+d['bx'],d['ay']+d['by'],d['az']+d['bz']]).transpose())
         
         self.window.process_events()
         
@@ -583,9 +603,6 @@ class solver():
         self.plot_inspect.plot()
         
         self.window.process_events()
-    
-
-        
 
     def _setting_changed(*a):
         """
@@ -596,7 +613,32 @@ class solver():
         domain    = a[1].name()
         parameter = a[2][0][0].name()
         value     = a[2][0][2]
-        self._set_domain_parameter(domain, parameter, value)
+        
+        # If we're enabling / disabling one of the settings, set all the 
+        # sub-parameters
+        if parameter in ['applied_field', 'other_torques', 'anisotropy', 'dipole']:
+            
+            # Assemble the root of the keys we wish to update
+            root = domain+'/'+parameter
+            
+            # Loop over the keys
+            for k in self.settings.keys():
+                
+                # Set the values if the root matches
+                if k.find(root) == 0:
+                    
+                    # Get the associated item name and value
+                    s = k.split('/')
+                    domain    = s[0]
+                    parameter = s[-1]
+                    if value: value = self.settings[k]
+                    else:     value = 0
+                    
+                    # Set it.
+                    self._set_domain_parameter(domain, parameter, value)
+                                
+        # Otherwise it's a normal parameter.
+        else: self._set_domain_parameter(domain, parameter, value)
         
         # Update the start dots
         self._update_start_dots()
