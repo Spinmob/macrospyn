@@ -22,7 +22,8 @@ _engine = _c.cdll.LoadLibrary(_path_dll)
 def _to_pointer(numpy_array): 
     """
     Converts the supplied numpy_array (assumed to be the usual 64-bit float)
-    to a pointer, allowing it ot be "connected" to the C-code engine.
+    to a pointer, allowing it ot be "connected" to the C-code engine. If None
+    is supplied, this returns None.
     
     SUPER IMPORTANT
     ---------------
@@ -37,13 +38,14 @@ def _to_pointer(numpy_array):
         
     Returns
     -------
-    C-pointer to the first element.
+    C-pointer to the first element, or None if numpy_array=None
     
     Examples
     --------
     my_solver.Bxs = _to_pointer(my_Bxs).
     
     """
+    if numpy_array is None: return None
     return numpy_array.ctypes.data_as(_c.POINTER(_c.c_double))
 
 
@@ -161,6 +163,23 @@ class _domain(_c.Structure):
                 exec('self._'+k+"=v", dict(self=self,v=None))
             
         return self
+    
+    def clear_arrays(self):
+        """
+        This sets all array pointers to NULL (None).
+        """
+        self.set(gammas = None, Ms = None, alphas = None, Xs = None, STTs = None,
+                 Bxs  = None, Bys  = None, Bzs  = None,
+                 Txs  = None, Tys  = None, Tzs  = None,
+                 Nxxs = None, Nxys = None, Nxzs = None,
+                 Nyxs = None, Nyys = None, Nyzs = None,
+                 Nzxs = None, Nzys = None, Nzzs = None,
+                 Dxxs = None, Dxys = None, Dxzs = None,
+                 Dyxs = None, Dyys = None, Dyzs = None,
+                 Dzxs = None, Dzys = None, Dzzs = None)
+        
+        
+        
     
     __call__ = set
 
@@ -508,17 +527,12 @@ class solver():
         self.tab_3d.place_object(self._widget_3d, column_span=4, alignment=0)
         self.tab_3d.set_column_stretch(3)
         
-        # Dump all the (autoloaded already) settings to the API
-        for k in self.settings.keys():
-            s = k.split('/')
-            self._set_domain_parameter(s[0], s[-1], self.settings[k])
-        
-        # When one of the settings changes, make sure to update the solver_api
-        self.settings.connect_any_signal_changed(self._setting_changed)
-        
         # Connect the other controls
         self.button_go     .signal_clicked.connect(self.button_go_clicked)
         self.button_plot_3d.signal_clicked.connect(self.button_plot_3d_clicked)
+        self.button_3d_a   .signal_clicked.connect(self.button_plot_3d_clicked)
+        self.button_3d_b   .signal_clicked.connect(self.button_plot_3d_clicked)
+        self.button_3d_sum .signal_clicked.connect(self.button_plot_3d_clicked)
         
         # Transfer the solver data based on the check boxes.
         self.settings.emit_signal_changed('a/applied_field')        
@@ -574,13 +588,20 @@ class solver():
         Plot 3d button pressed: Update the plot!
         """
         d = self.plot_inspect
-        if self.button_3d_a.is_checked():   self._trajectory_a_3d  .setData(pos=10*_n.vstack([d['ax'],d['ay'],d['az']]).transpose())
-        if self.button_3d_b.is_checked():   self._trajectory_b_3d  .setData(pos=10*_n.vstack([d['bx'],d['by'],d['bz']]).transpose())
-        if self.button_3d_sum.is_checked(): self._trajectory_sum_3d.setData(pos=10*_n.vstack([d['ax']+d['bx'],d['ay']+d['by'],d['az']+d['bz']]).transpose())
+        self._trajectory_a_3d  .setData(pos=10*_n.vstack([d['ax'],d['ay'],d['az']]).transpose())
+        self._trajectory_b_3d  .setData(pos=10*_n.vstack([d['bx'],d['by'],d['bz']]).transpose())
+        self._trajectory_sum_3d.setData(pos=10*_n.vstack([d['ax']+d['bx'],d['ay']+d['by'],d['az']+d['bz']]).transpose())
+        
+        self._trajectory_a_3d  .setVisible(self.button_3d_a  .is_checked())
+        self._trajectory_b_3d  .setVisible(self.button_3d_b  .is_checked())
+        self._trajectory_sum_3d.setVisible(self.button_3d_sum.is_checked())
+        
+        self._start_dot_a_3d  .setVisible(self.button_3d_a  .is_checked())
+        self._start_dot_b_3d  .setVisible(self.button_3d_b  .is_checked())
+        self._start_dot_sum_3d.setVisible(self.button_3d_sum.is_checked())
         
         self.window.process_events()
-        
-        
+              
     def go(self, reset=False):
         """
         Run the specified simulation.
@@ -590,7 +611,17 @@ class solver():
         reset=False
             After the run, update the initial conditions to match the 
             last point calculated.
+            
+        Returns
+        -------
+        self
         """
+        # Clear the domain arrays
+        self.api.a.clear_arrays()
+        self.api.b.clear_arrays()
+        
+        # Transfer all the values from the TreeDictionary to the api
+        self._transfer_all_to_api()
         
         # Run it.
         self.api.run(not self.settings['solver/reset'])
@@ -614,101 +645,156 @@ class solver():
         self.plot_inspect.plot()
         
         self.window.process_events()
+        
+        return self
 
-    def _before_settings_set_value(self, key, value, ignore_error, block_user_signals):
+    def _transfer_all_to_api(self):
         """
-        Function called right before someone sets a settings value. If the
-        value is an array, this will send it to the Inspect databox as a column
-        of data with the specified key, and abort the "usual" set. Otherwise, it 
-        will try to remove the column from the databox (if it exists) and
-        set the value normally.
+        Loops over the settings keys and transfers them to the api.
         """
-        return True
-        # s = key.split('/')
-        
-        # if type(value) == _n.ndarray:
-            
-        #     # Set it in the databox Inspector
-        #     self.plot_inspect[key] = value
-            
-        #     # Send the array to the solver
-        #     if   s[0] == 'a': self.api.a.set(**{s[-1]:value})
-        #     elif s[0] == 'b': self.api.b.set(**{s[-1]:value})
-                        
-        #     return False # Don't set it as usual!
-        
-        # # Normal single value. Better set the arrays to None!
-        # else:
-        #     # Pop the column if it exists
-        #     if s[-1] in self.plot_inspect.ckeys: self.plot_inspect.pop(s[-1])
-            
-        #     # Make sure the solver array value is None
-        #     if   s[0] == 'a': 
-            
-        #     # Now do the thing.
-        #     return True
+        for key in self.settings.keys(): self._transfer(key)
 
-    def _setting_changed(self, *a):
-        """
-        Called whenever settings are changed.
-        """
-        
-        self.x = a
-        
-        # Get the associated item name and value
-        domain    = a[0].name()
-        parameter = a[1][0][0].name()
-        value     = a[1][0][2]
-        self._transfer_to_solver(domain, parameter, value)
-    
-    def _transfer_to_solver(self, domain, parameter, value):
+    def _transfer(self, key):
         """
         Transfers the domain's parameter to the solver data.
         """
-        # If we're enabling / disabling one of the settings, set all the 
-        # sub-parameters
-        if parameter in ['applied_field', 'other_torques', 'anisotropy', 'dipole']:
+        
+        # s[0] is the domain, s[-1] is the parameter name
+        s = key.split('/')
+
+        # Don't do anything for the roots
+        if len(s) < 2: return        
+        
+        # Array value
+        short_key = s[0]+'/'+s[-1]
+        if short_key in self.plot_inspect.ckeys: 
             
-            # Assemble the root of the keys we wish to update
-            root = domain+'/'+parameter
+            # Use the array from the databox plotter
+            value = self.plot_inspect[short_key]
             
-            # Loop over the keys
-            for k in self.settings.keys():
+            # Pluralize the variable name.
+            s[-1] = s[-1]+'s'
+                    
+        # Normal value
+        else: value = self.settings[key]
+        
+        # If it's under an unchecked category, zero it.
+        if s[1] in ['applied_field', 'other_torques', 'anisotropy', 'dipole']:
+            
+            # If this is the category itself, break.
+            if len(s) == 2: return
+            
+            # Otherwise it's a parameter. Zero the value if it's in an 
+            # Unchecked category.
+            elif not self.settings[s[0]+'/'+s[1]]: value = 0
                 
-                # Set the values if the root matches
-                if k.find(root) == 0:
-                    
-                    # Get the associated item name and value
-                    s = k.split('/')
-                    domain    = s[0]
-                    parameter = s[-1]
-                    if value: value = self.settings[k]
-                    else:     value = 0
-                    
-                    # Set it.
-                    self._set_domain_parameter(domain, parameter, value)
-                                
-        # Otherwise it's a normal parameter.
-        else: self._set_domain_parameter(domain, parameter, value)
-        
-        # Update the start dots
-        self._update_start_dots()
-        
-    def _set_domain_parameter(self, domain, parameter, value):
-        """
-        Sets the value given domain and parameter.
-        """
-        # Come up with the command to execute
-        if domain=='solver': command =            'self.api.set('+parameter+'='+str(value)+')'
-        else:                command = 'self.api.'+domain+'.set('+parameter+'='+str(value)+')'   
+        # Come up with the command for sending the parameter to the api
+        if s[0]=='solver': command =            'self.api.set('+s[-1]+'= value)'
+        else:              command = 'self.api.'+s[0]+  '.set('+s[-1]+'= value)'   
         
         # Try it!
-        try:    exec(command, dict(self=self))
+        try:    exec(command, dict(self=self, value=value))
         except: print('FAIL: "'+command+'"')
         
+        # Update the start dots in the 3D plot
+        self._update_start_dots()
+    
+    def _elongate(self, key):
+        """
+        Returns a key that is the long form (inserting any sub-headings) to 
+        make it work on settings.
+        """
+        s = key.split('/')
+        if len(s) < 2: return key
+        
+        d = s[0]
+        p = s[-1]
+        if   p in ['x0','y0','z0']     :          return d+'/initial_condition/'+p
+        elif p in ['gamma','M','alpha']:          return d+'/material/'+p
+        elif p in ['Bx', 'By', 'Bz']   :          return d+'/applied_field/'+p
+        elif p in ['X', 'STT', 'Tx', 'Ty', 'Tz']: return d+'/other_torques/'+p
+        elif p[0] == 'N':                         return d+'/anisotropy/'+p
+        elif p[0] == 'D':                         return d+'/dipole/'+p
+        
+    def set(self, key, value):
+        """
+        Sets self.settings[key] = value, unless value is an array. In that case
+        it sets self.plot_inspect[key] = value. You can also skip the sub-heading, so
+        self.set('a/x0',0.5) will work the same as self.set('a/initial_condition/x0', 0.5)
 
-    def set(self, **kwargs):
-        return
+        Parameters
+        ----------
+        key : string
+            Parameter key to set.
+        value: string
+            Parameter value to set.
+            
+        Returns
+        -------
+        self
+
+        """
+        s = key.split('/')
+        if len(s) < 2: 
+            print('ERROR: Cannot set', key)
+            return
+        
+        # Arrays go to the inspect plotter, values go to settings
+        if type(value) == _n.ndarray: self.plot_inspect[key] = value
+        else:                         self.settings[self._elongate(key)] = value
+        
+        # Update plot
+        self.plot_inspect.plot()
+        self.window.process_events()
+        
+        return self
+    
+    __setitem__ = set    
+
+    def get(self, key):
+        """
+        Returns the value (or array if available) for the specified key. Key
+        can be "short", not including the sub-heading, e.g. 'a/x0' is the same
+        as 'a/initial_condition/x0'.
+
+        Parameters
+        ----------
+        key : string
+            Key of parameter to retrieve.
+
+        Returns
+        -------
+        value of parameter or array if available.
+
+        """
+        # For solver settings, return them with simple keys
+        if key in ['dt', 'steps', 'reset']: return self.settings['solver/'+key]
+        
+        # s[0] is the domain, s[-1] is the parameter name
+        s = key.split('/')
+
+        # Don't do anything for the roots
+        if len(s) < 2: return        
+        
+        # Array value
+        short_key = s[0]+'/'+s[-1]
+        if short_key in self.plot_inspect.ckeys: return self.plot_inspect[short_key]
+        else:                                    return self.settings[self._elongate(key)]
+    
+    __getitem__ = get
+    
+    def ns(self):
+        """
+        Returns an array of integer indices.
+        """
+        return _n.array(range(self['steps']))
+
+    def ts(self):
+        """
+        Returns a time array as per the solver settings.
+        """
+        return self.ns()*self['dt']
+
 
 if __name__ == '__main__':
     
