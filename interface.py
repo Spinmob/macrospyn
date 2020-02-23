@@ -19,7 +19,7 @@ _engine = _c.cdll.LoadLibrary(_path_dll)
 
 ## TO DO: Get check boxes working!
 
-def to_pointer_double(numpy_array): 
+def _to_pointer(numpy_array): 
     """
     Converts the supplied numpy_array (assumed to be the usual 64-bit float)
     to a pointer, allowing it ot be "connected" to the C-code engine.
@@ -41,7 +41,7 @@ def to_pointer_double(numpy_array):
     
     Examples
     --------
-    my_solver.Bxs = to_pointer_double(my_Bxs).
+    my_solver.Bxs = _to_pointer(my_Bxs).
     
     """
     return numpy_array.ctypes.data_as(_c.POINTER(_c.c_double))
@@ -132,9 +132,9 @@ class _domain(_c.Structure):
         Parameters
         ----------
         **kwargs : keyword will be set by evaluating self.keyword = value. In 
-        the case of an array, it will connect the appropriate (64-bit float) 
-        pointer. This will also save a "local" copy of the supplied value, such
-        that garbage collection doesn't automatically delete it.
+        the case of an array, it will convert it to a pointer and (64-bit float)
+        use an underscore, as needed, saving a "local" copy of the supplied 
+        value, such that garbage collection doesn't automatically delete it.
         
         Example
         -------
@@ -152,9 +152,9 @@ class _domain(_c.Structure):
             # deleted by the garbage collection.
             exec('self.'+k+"=v", dict(self=self,v=kwargs[k]))
             
-            # If it's an array, convert it before setting
+            # If it's an array, convert it before setting and use _
             if type(kwargs[k])==_n.ndarray:
-                exec('self._'+k+"=v", dict(self=self,v=to_pointer_double(kwargs[k])))
+                exec('self._'+k+"=v", dict(self=self,v=_to_pointer(kwargs[k])))
             
             # Otherwise, if it's None, update the pointer
             elif kwargs[k] is None:
@@ -243,14 +243,17 @@ class solver_api():
 
         Parameters
         ----------
-        **kwargs : keyword will be set by evaluating self.keyword = value. In 
-        the case of an array, it will connect the appropriate (64-bit float) 
-        pointer. This will also save a "local" copy of the supplied value, such
-        that garbage collection doesn't automatically delete it.
+        **kwargs : keyword will be set by evaluating self.keyword = value or
+        self.a.keyword = value and self.b.keyword=value, as appropriate. 
+        
+        In the case of an array value, it will convert to pointer (64-bit float) 
+        pointer and evaluate self.a._keyword=pointer. This will also save a 
+        "local" copy of the supplied value, such that garbage collection 
+        doesn't automatically delete it.
         
         Example
         -------
-        my_solver.set(dt=0.005)
+        my_solver.set(dt=0.002)
 
         Returns
         -------
@@ -296,12 +299,12 @@ class solver_api():
         self.bz = _n.zeros(self.steps); self.bz[0] = self.b.z0
         
         # Provide the c-code with access to the array data
-        self.a._x = to_pointer_double(self.ax)
-        self.a._y = to_pointer_double(self.ay)
-        self.a._z = to_pointer_double(self.az)
-        self.b._x = to_pointer_double(self.bx)
-        self.b._y = to_pointer_double(self.by)
-        self.b._z = to_pointer_double(self.bz)
+        self.a._x = _to_pointer(self.ax)
+        self.a._y = _to_pointer(self.ay)
+        self.a._z = _to_pointer(self.az)
+        self.b._x = _to_pointer(self.bx)
+        self.b._y = _to_pointer(self.by)
+        self.b._z = _to_pointer(self.bz)
         
         # Solve it.
         _engine.solve_heun.restype = None
@@ -447,8 +450,8 @@ class solver():
         
         # Inspection plot for all arrays
         self.tab_inspect  = self.tabs.add_tab('Inspect')
-        self.plot_inspect = self.tab_inspect.place_object(_g.DataboxPlot(), alignment=0)
-        self.plot_inspect['t'] = []
+        self.plot_inspect = self.tab_inspect.place_object(_g.DataboxPlot(autoscript=5, autosettings_path='solver.plot_inspect.txt'), alignment=0)
+        self.plot_inspect['t']  = []
         self.plot_inspect['ax'] = []
         self.plot_inspect['ay'] = []
         self.plot_inspect['az'] = []
@@ -517,7 +520,15 @@ class solver():
         self.button_go     .signal_clicked.connect(self.button_go_clicked)
         self.button_plot_3d.signal_clicked.connect(self.button_plot_3d_clicked)
         
-        
+        # Transfer the solver data based on the check boxes.
+        self.settings.emit_signal_changed('a/applied_field')        
+        self.settings.emit_signal_changed('a/other_torques')        
+        self.settings.emit_signal_changed('a/anisotropy')        
+        self.settings.emit_signal_changed('a/dipole')        
+        self.settings.emit_signal_changed('b/applied_field')        
+        self.settings.emit_signal_changed('b/other_torques')        
+        self.settings.emit_signal_changed('b/anisotropy')        
+        self.settings.emit_signal_changed('b/dipole')        
         
         # Let's have a look!
         self.window.show()
@@ -548,7 +559,7 @@ class solver():
         self._start_dot_b_3d  .setData(pos=10*_n.array([[bx, by, bz]]))
         self._start_dot_sum_3d.setData(pos=10*_n.array([[ax+bx, ay+by, az+bz]]))
 
-    def button_go_clicked(*a):
+    def button_go_clicked(self, *a):
         """
         Go button pressed: Run the simulation!
         """
@@ -558,7 +569,7 @@ class solver():
             self.go(self.settings['solver/reset'])
             self.button_plot_3d_clicked()
             
-    def button_plot_3d_clicked(*a):
+    def button_plot_3d_clicked(self, *a):
         """
         Plot 3d button pressed: Update the plot!
         """
@@ -604,16 +615,56 @@ class solver():
         
         self.window.process_events()
 
-    def _setting_changed(*a):
+    def _before_settings_set_value(self, key, value, ignore_error, block_user_signals):
+        """
+        Function called right before someone sets a settings value. If the
+        value is an array, this will send it to the Inspect databox as a column
+        of data with the specified key, and abort the "usual" set. Otherwise, it 
+        will try to remove the column from the databox (if it exists) and
+        set the value normally.
+        """
+        return True
+        # s = key.split('/')
+        
+        # if type(value) == _n.ndarray:
+            
+        #     # Set it in the databox Inspector
+        #     self.plot_inspect[key] = value
+            
+        #     # Send the array to the solver
+        #     if   s[0] == 'a': self.api.a.set(**{s[-1]:value})
+        #     elif s[0] == 'b': self.api.b.set(**{s[-1]:value})
+                        
+        #     return False # Don't set it as usual!
+        
+        # # Normal single value. Better set the arrays to None!
+        # else:
+        #     # Pop the column if it exists
+        #     if s[-1] in self.plot_inspect.ckeys: self.plot_inspect.pop(s[-1])
+            
+        #     # Make sure the solver array value is None
+        #     if   s[0] == 'a': 
+            
+        #     # Now do the thing.
+        #     return True
+
+    def _setting_changed(self, *a):
         """
         Called whenever settings are changed.
         """
         
-        # Get the associated item name and value
-        domain    = a[1].name()
-        parameter = a[2][0][0].name()
-        value     = a[2][0][2]
+        self.x = a
         
+        # Get the associated item name and value
+        domain    = a[0].name()
+        parameter = a[1][0][0].name()
+        value     = a[1][0][2]
+        self._transfer_to_solver(domain, parameter, value)
+    
+    def _transfer_to_solver(self, domain, parameter, value):
+        """
+        Transfers the domain's parameter to the solver data.
+        """
         # If we're enabling / disabling one of the settings, set all the 
         # sub-parameters
         if parameter in ['applied_field', 'other_torques', 'anisotropy', 'dipole']:
