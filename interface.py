@@ -481,8 +481,8 @@ class solver():
         # 3D plot
         self.tab_3d = self.tabs.add_tab('3D')
         self.button_3d_a   = self.tab_3d.place_object(_g.Button('a',   checkable=True, checked=True)) 
-        self.button_3d_b   = self.tab_3d.place_object(_g.Button('b',   checkable=True, checked=True)) 
-        self.button_3d_sum = self.tab_3d.place_object(_g.Button('Sum', checkable=True, checked=True)) 
+        self.button_3d_b   = self.tab_3d.place_object(_g.Button('b',   checkable=True, checked=False)) 
+        self.button_3d_sum = self.tab_3d.place_object(_g.Button('Sum', checkable=True, checked=False)) 
         self.button_plot_3d = self.tab_3d.place_object(_g.Button('Update Plot'))
         self.tab_3d.new_autorow()
         
@@ -581,7 +581,6 @@ class solver():
         for n in range(self.number_iterations.get_value()):
             self.label_iteration.set_text(str(n+1))
             self.go(self.settings['solver/reset'])
-            self.button_plot_3d_clicked()
             
     def button_plot_3d_clicked(self, *a):
         """
@@ -643,7 +642,8 @@ class solver():
         self.plot_inspect['by'] = self.api.by
         self.plot_inspect['bz'] = self.api.bz
         self.plot_inspect.plot()
-        
+        self.button_plot_3d_clicked()
+            
         self.window.process_events()
         
         return self
@@ -719,8 +719,13 @@ class solver():
     def set(self, key, value):
         """
         Sets self.settings[key] = value, unless value is an array. In that case
-        it sets self.plot_inspect[key] = value. You can also skip the sub-heading, so
-        self.set('a/x0',0.5) will work the same as self.set('a/initial_condition/x0', 0.5)
+        it sets self.plot_inspect[key] = value. 
+        
+        You can also skip the sub-heading, so self.set('a/x0',0.5) will work 
+        the same as self.set('a/initial_condition/x0', 0.5)
+
+        Also, if you skip the root, it will assume either 'solver' or 'a' by
+        default, so 'Tx' is the same as 'a/Tx'.
 
         Parameters
         ----------
@@ -735,6 +740,11 @@ class solver():
 
         """
         s = key.split('/')
+        if len(s) == 1 and s[0] not in ['solver', 'a', 'b']:
+            if s[0] in ['dt', 'steps', 'reset']: s.insert(0,'solver')
+            else:                                s.insert(0,'a')
+            key = '/'.join(s)
+        
         if len(s) < 2: 
             print('ERROR: Cannot set', key)
             return
@@ -795,6 +805,27 @@ class solver():
         """
         return self.ns()*self['dt']
 
+    def zeros(self):
+        """
+        Returns a self['steps']-length array of zeros.
+        """
+        return _n.zeros(self['steps'])
+
+    def ones(self):
+        """
+        Returns a self['steps']-length array of ones.
+        """
+        return _n.ones(self['steps'])
+
+    def pulse(self, n0, n1):
+        """
+        Returns an array of length self['steps'] that is zero everywhere except
+        from n0 to n1-1.
+        """
+        z = self.zeros()
+        z[n0:n1] = 1.0
+        return z
+        
 
 if __name__ == '__main__':
     
@@ -812,6 +843,17 @@ if __name__ == '__main__':
     # m.run().plot(clear=0, t0=(m.steps-1)*m.dt*2)
     
     self = solver()
+    
+    # Single-cycle switch, z-anisotropy
+    # d1=150; d2=131; d3=14; 
+    # self['Tx'] = 40e9*(self.pulse(0,d1) - self.pulse(d1+d2,d1+d2+d3))
+    # self['Tz'] = 10e9*(self.pulse(d1,d1+d2))
+    # self.go()
+    
+    n1=34; 
+    self['Tx'] = 4e9*self.pulse(0,n1); 
+    self['Tz'] = 1e9*self.pulse(n1,self['steps']); self.go()
+    self.go()
     
     
     
