@@ -16,6 +16,15 @@ else:                      _path_dll = _os.path.join(_os.path.split(__file__)[0]
 # Get the engine.
 _engine = _c.cdll.LoadLibrary(_path_dll)
 
+# Constants
+pi   = _n.pi
+u0   = 1.25663706212e-6 # Vacuum permeability [H/m | N/A^2]
+ec   = 1.60217662e-19   # Elementary charge [Coulomb]
+me   = 9.1093837015e-31 # Electron mass [kg]
+hbar = 1.0545718e-34    # [m^2 kg/s | J s]
+uB   = 9.274009994e-24  # Bohr magneton [J/T]
+c    = 299792458.0      # Speed of light [m/s]
+kB   = 1.38064852e-23   # Boltzmann constant [J/K]
 
 ## TO DO: Get check boxes working!
 
@@ -127,42 +136,65 @@ class _domain(_c.Structure):
         
     ] # End of _data structure
     
-    def set(self, **kwargs): 
+    def set(self, key, value): 
         """
-        Sets any number of parameters for this domain.
+        Sets the specified parameter (key) to the specified value. Specifically,
+        will be set by evaluating self.keyword = value. In the case of an array, 
+        it will convert it to a pointer and (64-bit float) use an underscore, as needed, 
+        saving a "local" copy of the supplied value, such that garbage 
+        collection doesn't automatically delete it.
 
         Parameters
         ----------
-        **kwargs : keyword will be set by evaluating self.keyword = value. In 
-        the case of an array, it will convert it to a pointer and (64-bit float)
-        use an underscore, as needed, saving a "local" copy of the supplied 
-        value, such that garbage collection doesn't automatically delete it.
+        key:
+            Parameter name to set, e.g. 'Bx'. 
+        value:
+            Value to set it to. Can be a number or ndarray.
         
         Example
         -------
-        my_solver.a.set(Bys=numpy.linspace(0,5,my_solver.steps), gamma=27)
+        my_solver.a.set(By=numpy.linspace(0,5,my_solver.steps), gamma=27)
 
         Returns
         -------
         self
 
         """
+    
+        # Store the "local" copy, to make sure we keep it from getting
+        # deleted by the garbage collection.
+        exec('self.'+key+"s=v", dict(self=self,v=value))
         
-        for k in kwargs:
-
-            # Store the "local" copy, to make sure we keep it from getting
-            # deleted by the garbage collection.
-            exec('self.'+k+"=v", dict(self=self,v=kwargs[k]))
-            
-            # If it's an array, convert it before setting and use _
-            if type(kwargs[k])==_n.ndarray:
-                exec('self._'+k+"=v", dict(self=self,v=_to_pointer(kwargs[k])))
-            
-            # Otherwise, if it's None, update the pointer
-            elif kwargs[k] is None:
-                exec('self._'+k+"=v", dict(self=self,v=None))
+        # If it's an array, convert it before setting and use _*s
+        if type(value)==list: value = _n.ndarray(value)
+        if type(value)==_n.ndarray:
+            exec('self._'+key+"s=v", dict(self=self,v=_to_pointer(value)))
+        
+        # Otherwise it's a number, so we need to kill the old pointer and
+        # array
+        else: 
+            exec('self.'+key+'=v', dict(self=self,v=value))
+            exec('self.' +key+'s=None', dict(self=self)) # Local copy
+            exec('self._'+key+"s=None", dict(self=self)) # Converted copy
             
         return self
+    
+    __setitem__ = set
+    
+    def get(self, key='Bx'):
+        """
+        Returns the specified parameter. Will return the array (e.g., Bxs) 
+        if there is one, and the value if there is not.
+        """
+        # If it's an array, return that
+        if hasattr(self, key+'s'):
+            x = eval('self.'+key+'s', dict(self=self))
+            if x is not None: return x
+        
+        # Otherwise just return the value.
+        return eval('self.'+key, dict(self=self))
+    
+    __getitem__ = get
     
     def clear_arrays(self):
         """
@@ -295,17 +327,30 @@ class solver_api():
     
     __call__ = set
     
-    def run(self, update_initial_condition=True):
+    def get(self, ):
+        """
+        Returns the value of the specified parameter,  array if possible, then the constant.
+        """
+    
+    def run(self, update_initial_condition=False):
         """
         Creates the solution arrays and runs the solver to fill them up.
         Afterward, the initial conditions are (by default) set to the 
         last value of the solution arrays.
         
+        NOTE: BE CAREFUL about update_initial_condition=True. This will ONLY
+        transfer the 6 magnetization components, not the other arrays you have
+        specified. For example, if you're using a Langevin (randomly fluctuating)
+        field, you will need to transfer the last element of the field arrays to 
+        the first element of the subsequent run's arrays manually, to maintain
+        a consistent / continuous simulation. The last value of any user-
+        specified array is used to calculate the last step.
+        
         Parameters
         ----------
         update_initial_condition=True
             If True, the initial conditions (self.a.x0, self.b.x0, ...) will be
-            set to the last value of the solution arrays.
+            set to the last value of the solution arrays. SEE ABOVE NOTE.
         """
         self.steps = int(self.steps)
         
@@ -332,6 +377,7 @@ class solver_api():
         
         # Set the initial conditions for the next run
         if update_initial_condition:
+
             self.a.x0 = self.ax[-1]
             self.a.y0 = self.ay[-1]
             self.a.z0 = self.az[-1]
@@ -354,6 +400,29 @@ class solver():
         # Solver application programming interface.
         self.api = solver_api()
         
+        # Previous values for the thermal field
+        self._a_BTx = None
+        self._a_BTy = None
+        self._a_BTz = None
+        
+        self._b_BTx = None
+        self._b_BTy = None
+        self._b_BTz = None
+        
+        # Previous parameters relevant to thermal field
+        self._dt       = None
+        self._a_T      = None
+        self._a_M      = None
+        self._a_volume = None
+        self._a_gamma  = None
+        self._a_alpha  = None
+        
+        self._b_T      = None
+        self._b_M      = None
+        self._b_volume = None
+        self._b_gamma  = None
+        self._b_alpha  = None
+        
         # Graphical interface
         self.window = _g.Window(title='Macrospin(mob)', autosettings_path='solver.window.txt', size=[1000,550])
         
@@ -372,6 +441,7 @@ class solver():
         
         self.settings.add_parameter('solver/dt',    1e-12, dec=True,                  siPrefix=True, suffix='s')
         self.settings.add_parameter('solver/steps', 5000,  dec=True, limits=(2,None), siPrefix=True, suffix='steps')
+        self.settings.add_parameter('solver/T',      0.0,  limits=(0,None),           siPrefix=True, suffix='K')
         self.settings.add_parameter('solver/reset', True)
         
         self.settings.add_parameter('a/mode', 1, limits=(0,1), tip='0=disabled, 1=LLG')
@@ -528,11 +598,11 @@ class solver():
         self.tab_3d.set_column_stretch(3)
         
         # Connect the other controls
-        self.button_go     .signal_clicked.connect(self.button_go_clicked)
-        self.button_plot_3d.signal_clicked.connect(self.button_plot_3d_clicked)
-        self.button_3d_a   .signal_clicked.connect(self.button_plot_3d_clicked)
-        self.button_3d_b   .signal_clicked.connect(self.button_plot_3d_clicked)
-        self.button_3d_sum .signal_clicked.connect(self.button_plot_3d_clicked)
+        self.button_go     .signal_clicked.connect(self._button_go_clicked)
+        self.button_plot_3d.signal_clicked.connect(self._button_plot_3d_clicked)
+        self.button_3d_a   .signal_clicked.connect(self._button_plot_3d_clicked)
+        self.button_3d_b   .signal_clicked.connect(self._button_plot_3d_clicked)
+        self.button_3d_sum .signal_clicked.connect(self._button_plot_3d_clicked)
         
         # Transfer the solver data based on the check boxes.
         self.settings.emit_signal_changed('a/applied_field')        
@@ -573,16 +643,7 @@ class solver():
         self._start_dot_b_3d  .setData(pos=10*_n.array([[bx, by, bz]]))
         self._start_dot_sum_3d.setData(pos=10*_n.array([[ax+bx, ay+by, az+bz]]))
 
-    def button_go_clicked(self, *a):
-        """
-        Go button pressed: Run the simulation!
-        """
-
-        for n in range(self.number_iterations.get_value()):
-            self.label_iteration.set_text(str(n+1))
-            self.go(self.settings['solver/reset'])
-            
-    def button_plot_3d_clicked(self, *a):
+    def _button_plot_3d_clicked(self, *a):
         """
         Plot 3d button pressed: Update the plot!
         """
@@ -600,16 +661,46 @@ class solver():
         self._start_dot_sum_3d.setVisible(self.button_3d_sum.is_checked())
         
         self.window.process_events()
+    
+    def _same_thermal_settings(self):
+        """
+        Checks the current thermal field settings against previous ones (if any)
+        and returns true if they are the same.
+        """
+        return  self._dt       == self['dt']       and \
+                self._T        == self['T']        and \
+                self._a_M      == self['a/M']      and \
+                self._a_volume == self['a/volume'] and \
+                self._a_gamma  == self['a/gamma']  and \
+                self._a_alpha  == self['a/alpha']  and \
+                self._b_M      == self['b/M']      and \
+                self._b_volume == self['b/volume'] and \
+                self._b_gamma  == self['b/gamma']  and \
+                self._b_alpha  == self['b/alpha']
+       
+
+    def _button_go_clicked(self, *a):
+        """
+        Go button pressed: Run the simulation!
+        """
+
+        for n in range(self.number_iterations.get_value()):
+            self.label_iteration.set_text(str(n+1))
+            self.run(self.settings['solver/reset'])
+            
               
-    def go(self, reset=False):
+    def run(self, reset=False):
         """
         Run the specified simulation.
+        
+        IMPORTANT: See self.api.run()'s documentation for a concern about 
+        setting reset=True.
         
         Parameters
         ----------
         reset=False
             After the run, update the initial conditions to match the 
-            last point calculated.
+            last point calculated. 
             
         Returns
         -------
@@ -620,8 +711,32 @@ class solver():
         self.api.b.clear_arrays()
         
         # Transfer all the values from the TreeDictionary to the api
+        # This skips non-api entries like 'solver', 'a', 'b', and 'solver/T'
         self._transfer_all_to_api()
         
+        # If we have a Langevin field, add it in.
+        if self['T'] > 0:
+            
+            # If domain a is enabled
+            if self['a/mode']:
+                
+                # Generate new langevin field arrays
+                BTx = self.thermal_field('a', self['T'], self['a/volume']*1e27)
+                BTy = self.thermal_field('a', self['T'], self['a/volume']*1e27)
+                BTz = self.thermal_field('a', self['T'], self['a/volume']*1e27)
+                
+                # If thermal field-relevant parameters are the same
+                # and we're doing a continuous simulation, and we have
+                # previous thermal number, set it!
+                if  self._same_thermal_settings() and \
+                not self['reset'] and self._a_BTx is not None:
+                    Btx[0] = self._a_BTx
+                    Bty[0] = self._a_BTy
+                    Btz[0] = self._a_BTz
+                
+                # Now update the existing API fields
+                self.api.get
+                    
         # Run it.
         self.api.run(not self.settings['solver/reset'])
         
@@ -642,7 +757,7 @@ class solver():
         self.plot_inspect['by'] = self.api.by
         self.plot_inspect['bz'] = self.api.bz
         self.plot_inspect.plot()
-        self.button_plot_3d_clicked()
+        self._button_plot_3d_clicked()
             
         self.window.process_events()
         
@@ -658,13 +773,12 @@ class solver():
         """
         Transfers the domain's parameter to the solver data.
         """
+        # Ignore some keys that aren't in the api
+        if key in ['solver', 'a', 'b', 'solver/T']: return        
         
         # s[0] is the domain, s[-1] is the parameter name
         s = key.split('/')
 
-        # Don't do anything for the roots
-        if len(s) < 2: return        
-        
         # Array value
         short_key = s[0]+'/'+s[-1]
         if short_key in self.plot_inspect.ckeys: 
@@ -778,7 +892,7 @@ class solver():
 
         """
         # For solver settings, return them with simple keys
-        if key in ['dt', 'steps', 'reset']: return self.settings['solver/'+key]
+        if key in ['dt', 'steps', 'reset', 'T']: return self.settings['solver/'+key]
         
         # s[0] is the domain, s[-1] is the parameter name
         s = key.split('/')
@@ -793,17 +907,37 @@ class solver():
     
     __getitem__ = get
     
-    def ns(self):
+    def ns(self, n=0):
         """
-        Returns an array of integer indices.
+        Returns an array of integer indices for the n'th simulation iteration.
+        
+        Specifically, it returns 
+        
+        _n.array(range(self['steps'])) + n*(self.settings['steps']-1)
+          
+        The '-1' in the above is because the last step of the previous iteration
+        is used to initialize the first step of the following iteration.
+          
+        Parameters
+        ----------
+        n=0 [integer]
+            Which simulation iteration this corresponds to.
         """
-        return _n.array(range(self['steps']))
+        return _n.array(range(self.settings['solver/steps'])) \
+               + n*(self.settings['solver/steps']-1)
 
-    def ts(self):
+    def ts(self, n=0):
         """
-        Returns a time array as per the solver settings.
+        Returns a time array for the n'th iteration as per the solver settings.
+        
+        Specifically, it returns self.ns()*self.settings['solver/dt']
+        
+        Parameters
+        ----------
+        n=0 [integer]
+            Which iteration of the simulation
         """
-        return self.ns()*self['dt']
+        return self.ns(n)*self.settings['solver/dt']
 
     def zeros(self):
         """
@@ -825,7 +959,149 @@ class solver():
         z = self.zeros()
         z[n0:n1] = 1.0
         return z
+    
+    def sin(self, frequency_GHz=1.0, phase_rad=0.0, n=0):
+        """
+        Returns an appropriately sized array of sinusoidal oscillations at
+        frequency f_GHz [GHz] with phase p_rad [radians]. The integer n adds
+        the appropriate phase for the n'th iteration of the simulation, allowing
+        you to generate a continuous sinusoid over many iterations.
         
+        Specifically, the returned array is 
+        sin(2*pi*frequency_GHz*self.ts(n) + phase_rad)
+        
+        Parameters
+        ----------
+        frequency_GHz [GHz]
+            Frequency of oscillation in GHz.
+        phase_rad [radians]
+            Phase in radians.
+        n=0 [integer]
+            Which iteration this is. You can use this integer to make a 
+            continuous sinusoid over multiple iterations of the solver. 
+        """
+        return _n.sin(2*_n.pi*frequency_GHz*1e9*self.ts(n)+phase_rad)
+    
+    def cos(self, frequency_GHz=1.0, phase_rad=0.0, n=0):
+        """
+        Returns an appropriately sized array of sinusoidal oscillations at
+        frequency f_GHz [GHz] with phase p_rad [radians]. The integer n adds
+        the appropriate phase for the n'th iteration of the simulation, allowing
+        you to generate a continuous sinusoid over many iterations.
+        
+        Specifically, the returned array is 
+        cos(2*pi*frequency_GHz*self.ts(n) + phase_rad)
+        
+        Parameters
+        ----------
+        f_GHz=1.0 [GHz]
+            Frequency of oscillation in GHz.
+        p_rad=0.0 [radians]
+            Phase in radians.
+        n=0 [integer]
+            Which iteration this is. You can use this integer to make a 
+            continuous sinusoid over multiple iterations of the solver. 
+        """
+        return _n.cos(2*_n.pi*frequency_GHz*1e9*self.ts(n)+phase_rad)
+    
+    def gaussian_noise(self, mean=0, standard_deviation=1.0):
+        """
+        Returns an appropriately sized (self['steps']) array of random values
+        drawn from a Gaussian distribution of the specified mean and standard_deviation.
+        
+        Parameters
+        ----------
+        mean=0
+            Center of the distribution.
+        standard_deviation=1.0
+            Standard deviation of the distribution.
+        """
+        return _n.random.normal(mean, standard_deviation, self.settings['solver/steps'])
+        
+    def thermal_field_rms(self, domain='a', T_K=295.0, volume_nm3=100*100*10):
+        """
+        Returns an array of length self['steps'] containing random, uncorrelated 
+        fields [T], drawn from a Gaussian distribution appropriate for modeling
+        thermal fluctuations at temperature T_K [K] for the specified domain,
+        assuming a magnetic volume volume_nm3 [nm^3]. Note, that each component
+        of the magnetic field should have an independent langevin array added
+        to it to properly model thermal fluctuations (i.e., there should be
+        three calls to this function per domain, per simulation).
+        
+        IMPORTANT: If you're conducting a "continuous" simulation that uses
+        the last value of the previous run to initialize the first value of the 
+        next run, you will need to also overwrite the first value of the 
+        next langevin array with the last value of the previous run's array, 
+        or else the simulation is not consistent (the last value of the field
+        is used to calculate the last step).
+        
+        Parameters
+        ----------
+        domain='a'
+            Which domain receives the Langevin field The only domain-
+            specific parameters used are gamma and M.
+            
+        efficiency=1.0 [unitless]
+            How electron spins are deposited on average per passing electron.
+            
+        volume_nm3=100*100*10 [nm^3]
+            Total volume of the magnetic domain in cubic nanometers.
+        
+        Returns
+        -------
+        """
+        return _n.sqrt(4*self.settings[domain+'/material/alpha']*kB*T_K     \
+                     /  (self.settings[domain+'/material/gamma']*           \
+                         self.settings[domain+'/material/M']/u0*volume_nm3* \
+                         self.settings['solver/dt']))
+    
+    def thermal_field_component(self, domain='a', T_K=295.0, volume_nm3=100*100*10):
+        """
+        Returns an array of size self['steps'] containing random values drawn
+        from a Gaussian distribution having standard deviation
+        self.thermal_field_rms(domain, T_K, volume_nm3).
+        
+        IMPORTANT: To keep the solver consistent when transferring the previous run's 
+        value to the initial condition of the current run, you must also transfer
+        the previous run's last thermal field values to the first value of the
+        current run.
+        """
+        self.gaussian_noise()*self.thermal_field_rms(domain, T_K, volume_nm3)
+    
+    def thermal_field(self, domain='a'):
+        """
+        Returns three components
+        """
+    
+    def spin_torque_per_mA(self, domain='a', efficiency=1.0, volume_nm3=100*100*10):
+        """
+        Returns the torque per milliamp [rad/(s*mA)] that would be applied when
+        spin polarization is perpendicular to a magnetization 
+        self[domain+'/M'] [T] filling the specified volume_nm3 [nm^3]. This can 
+        basically be used to calculate the prefactor on the a x (a x s) term in
+        the LLG equation, where a is the domain unit vector, and s is the 
+        spin polarization unit vector, which, for this simulation has units of
+        [rad/s].
+        
+        Parameters
+        ----------
+        domain='a'
+            Which domain receives the spin transfer torque. The only domain-
+            specific parameters used are gamma and M.
+            
+        efficiency=1.0 [unitless]
+            How electron spins are deposited on average per passing electron.
+            
+        volume_nm3=100*100*10 [nm^3]
+            Total volume of the magnetic domain in cubic nanometers.
+        
+        Returns
+        -------
+        The torque per mA [rad/(s*mA)] applied to a unit vector.
+        """
+        return efficiency*self[domain+'/gamma']*hbar*1e-3 / \
+               (2*ec*(self[domain+'/M']/u0)*volume_nm3*1e-27)
+    
 
 if __name__ == '__main__':
     
@@ -844,19 +1120,28 @@ if __name__ == '__main__':
     
     self = solver()
     
+
+
     # Single-cycle switch, z-anisotropy
+    
     # d1=150; d2=131; d3=14; 
     # self['Tx'] = 40e9*(self.pulse(0,d1) - self.pulse(d1+d2,d1+d2+d3))
     # self['Tz'] = 10e9*(self.pulse(d1,d1+d2))
-    # self.go()
+    # self.run()
     
-    n1=34; 
-    self['Tx'] = 4e9*self.pulse(0,n1); 
-    self['Tz'] = 1e9*self.pulse(n1,self['steps']); self.go()
-    self.go()
+    # n1=34; 
+    # self['Tx'] = 4e9*self.pulse(0,n1); 
+    # self['Tz'] = 1e9*self.pulse(n1,self['steps']); self.run()
+    # self.run()
     
-    
-    
+
+
+    # Thermal field
+
+    #self['Bx'] = self.thermal_field()
+    #self['By'] = self.thermal_field()
+    #self['Bz'] = self.thermal_field() + 0.1
+        
     
     
     
