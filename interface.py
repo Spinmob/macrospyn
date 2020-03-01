@@ -10,8 +10,9 @@ import traceback as _t
 _p = _t.print_last
 
 # Find the path to the compiled c-code (only Windows and Linux supported so far.)
-if _platform in ['win32']: _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine.dll')
-else:                      _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine.so')
+if   _platform in ['win32']:  _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine.dll')
+elif _platform in ['darwin']: _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine-osx.so')
+else:                         _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine.so')
 
 # Get the engine.
 _engine = _c.cdll.LoadLibrary(_path_dll)
