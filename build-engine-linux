@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# Requires only that you install gcc (i.e., from your package manager).
+gcc -shared -Wl,-soname,engine -o engine-linux.so -fPIC engine.c

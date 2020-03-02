@@ -10,9 +10,9 @@ import traceback as _t
 _p = _t.print_last
 
 # Find the path to the compiled c-code (only Windows and Linux supported so far.)
-if   _platform in ['win32']:  _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine.dll')
+if   _platform in ['win32']:  _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine-windows.dll')
 elif _platform in ['darwin']: _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine-osx.so')
-else:                         _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine.so')
+else:                         _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine-linux.so')
 
 # Get the engine.
 _engine = _c.cdll.LoadLibrary(_path_dll)
@@ -65,7 +65,7 @@ class _domain(_c.Structure):
     Structure for sending all the simulation parameters to the c library.
     The user should not interact with this for the most part.
     """
-    
+        
     # NOTE: The order here and structure here REALLY has to match the struct 
     # in the C-code! This class will be sent by reference, and the c-code 
     # will expect everything to be in its place.
@@ -137,6 +137,14 @@ class _domain(_c.Structure):
         
     ] # End of _data structure
     
+    def keys(self):
+        """
+        Returns a list of keys that can be used in set() or get().
+        """
+        return ['gamma', 'M', 'alpha', 'X', 'STT',
+                'Tx', 'Ty', 'Tz', 'Bx', 'By', 'Bz',
+                'Nxx', 'Nxy', 'Nxz', 'Nyx', 'Nyy', 'Nyz', 'Nzx', 'Nzy', 'Nzz']
+    
     def set(self, key, value): 
         """
         Sets the specified parameter (key) to the specified value. Specifically,
@@ -182,6 +190,14 @@ class _domain(_c.Structure):
     
     __setitem__ = set
     
+    def set_multiple(self, **kwargs):
+        """
+        Sends all keyword arguments to self.set().
+        """
+        for k in kwargs: self[k] = kwargs[k]
+    
+    __call__ = set_multiple
+    
     def get(self, key='Bx'):
         """
         Returns the specified parameter. Will return the array (e.g., Bxs) 
@@ -201,30 +217,47 @@ class _domain(_c.Structure):
         """
         This sets all array pointers to NULL (None).
         """
-        self.set(gammas = None, Ms = None, alphas = None, Xs = None, STTs = None,
-                 Bxs  = None, Bys  = None, Bzs  = None,
-                 Txs  = None, Tys  = None, Tzs  = None,
-                 Nxxs = None, Nxys = None, Nxzs = None,
-                 Nyxs = None, Nyys = None, Nyzs = None,
-                 Nzxs = None, Nzys = None, Nzzs = None,
-                 Dxxs = None, Dxys = None, Dxzs = None,
-                 Dyxs = None, Dyys = None, Dyzs = None,
-                 Dzxs = None, Dzys = None, Dzzs = None)
+        self['gamma'] = self.gamma
+        self['M']     = self.M
+        self['alpha'] = self.alpha
+        self['X']     = self.X
+        self['STT']   = self.STT
         
+        self['Bx']    = self.Bx
+        self['By']    = self.By
+        self['Bz']    = self.Bz
         
+        self['Nxx']   = self.Nxx
+        self['Nxy']   = self.Nxy
+        self['Nxz']   = self.Nxz
+        self['Nyx']   = self.Nyx
+        self['Nyy']   = self.Nyy
+        self['Nyz']   = self.Nyz
+        self['Nzx']   = self.Nzx
+        self['Nzy']   = self.Nzy
+        self['Nzz']   = self.Nzz
         
+        self['Dxx']   = self.Dxx
+        self['Dxy']   = self.Dxy
+        self['Dxz']   = self.Dxz
+        self['Dyx']   = self.Dyx
+        self['Dyy']   = self.Dyy
+        self['Dyz']   = self.Dyz
+        self['Dzx']   = self.Dzx
+        self['Dzy']   = self.Dzy
+        self['Dzz']   = self.Dzz
     
-    __call__ = set
 
 
 
 class solver_api():
     """
-    Scripted interface for the solver engine. Keyword arguments are 
-    sent to self.set().
+    Scripted interface for the solver engine. 
     """
     
-    def __init__(self, **kwargs):
+    _solver_keys  = ['dt', 'steps']
+    
+    def __init__(self):
 
         # Store the run parameters
         self.dt    = 1e-12
@@ -286,26 +319,21 @@ class solver_api():
         self.ax = self.ay = self.az = None
         self.bx = self.by = self.bz = None
         
-        self.set(**kwargs)
-        
-    def set(self, **kwargs): 
+    def set(self, key, value): 
         """
-        Sets any number of parameters for the solver. Magnetic parameters will
+        Sets a parameter for the solver. Magnetic parameters, e.g., 'gamma' will
         be applied to both domains.
 
         Parameters
         ----------
-        **kwargs : keyword will be set by evaluating self.keyword = value or
-        self.a.keyword = value and self.b.keyword=value, as appropriate. 
-        
-        In the case of an array value, it will convert to pointer (64-bit float) 
-        pointer and evaluate self.a._keyword=pointer. This will also save a 
-        "local" copy of the supplied value, such that garbage collection 
-        doesn't automatically delete it.
+        key:
+            Parameter name to set, e.g. 'Bx'. 
+        value:
+            Value to set it to. Can be a number or ndarray.
         
         Example
         -------
-        my_solver.set(dt=0.002)
+        my_solver.a.set(By=numpy.linspace(0,5,my_solver.steps), gamma=27)
 
         Returns
         -------
@@ -313,25 +341,57 @@ class solver_api():
 
         """
         
-        for k in kwargs:
-
-            # If it's a property of the solver, store it in the solver
-            if k in ['dt', 'steps']:
-                exec('self.'+k+"=v", dict(self=self,v=kwargs[k]))
+        # If it's a property of the solver, store it in the solver
+        if key in self._solver_keys:
+            exec('self.'+key+"=v", dict(self=self,v=value))
+    
+        # Otherwise, send it to a and b.
+        elif key in self.a.keys():
+            self.a.set(key, value)
+            self.b.set(key, value)
         
-            # Otherwise, send it to a and b.
-            else:
-                self.a.set(**{k:kwargs[k]})
-                self.b.set(**{k:kwargs[k]})
-            
         return self
     
-    __call__ = set
+    __setitem__ = set
     
-    def get(self, ):
+    def set_multiple(self, **kwargs):
         """
-        Returns the value of the specified parameter,  array if possible, then the constant.
+        Sends all keyword arguments to self.set().
         """
+        for k in kwargs: self[k] = kwargs[k]
+    
+    __call__ = set_multiple
+    
+    def get(self, key='a/Bx'):
+        """
+        Returns the specified parameter. Will return the array (e.g., Bxs) 
+        if there is one, and the value if there is not.
+        
+        Parameters
+        ----------
+        key='a/Bx'
+            Key of item to retrieve. Specify domain 'a' or 'b' with a '/' as in
+            the example for domain-specific items, and just the parameter for
+            the solver itself, e.g., 'steps'.
+        
+        Returns
+        -------
+        The value (or array if present).
+        """
+        
+        # First split by '/'
+        s = key.split('/')
+        
+        # If length is 1, this is a solver parameter
+        if len(s) == 1: return eval('self.'+key)
+        
+        # Otherwise, it's a domain parameter
+        domain = eval('self.'+s[0])
+        key    = s[1]
+        
+        return domain.get(key)
+    
+    __getitem__ = get
     
     def run(self, update_initial_condition=False):
         """
@@ -770,12 +830,28 @@ class solver():
         """
         for key in self.settings.keys(): self._transfer(key)
 
+    def _api_key_exists(self, key):
+        """
+        See if the key (from the TreeDictionary only!) exists in the API.
+        """
+        s = key.split('/')
+        
+        # Categories (solver, a, b)
+        if len(s) == 1: return False
+        
+        # Solver parameters
+        if s[-1] in self.api._solver_keys: return True
+        
+        # Domain parameters
+        return s[-1] in self.api.a.keys()
+        
+
     def _transfer(self, key):
         """
         Transfers the domain's parameter to the solver data.
         """
-        # Ignore some keys that aren't in the api
-        if key in ['solver', 'a', 'b', 'solver/T']: return        
+        # Ignore some keys that aren't in the api (defined above)
+        if not self._api_key_exists(key): return        
         
         # s[0] is the domain, s[-1] is the parameter name
         s = key.split('/')
@@ -804,8 +880,8 @@ class solver():
             elif not self.settings[s[0]+'/'+s[1]]: value = 0
                 
         # Come up with the command for sending the parameter to the api
-        if s[0]=='solver': command =            'self.api.set('+s[-1]+'= value)'
-        else:              command = 'self.api.'+s[0]+  '.set('+s[-1]+'= value)'   
+        if s[0]=='solver': command =            'self.api.set_multiple('+s[-1]+'= value)'
+        else:              command = 'self.api.'+s[0]+  '.set_multiple('+s[-1]+'= value)'   
         
         # Try it!
         try:    exec(command, dict(self=self, value=value))
@@ -814,7 +890,7 @@ class solver():
         # Update the start dots in the 3D plot
         self._update_start_dots()
     
-    def _elongate(self, key):
+    def _elongate_domain_key(self, key):
         """
         Returns a key that is the long form (inserting any sub-headings) to 
         make it work on settings.
@@ -830,6 +906,17 @@ class solver():
         elif p in ['X', 'STT', 'Tx', 'Ty', 'Tz']: return d+'/other_torques/'+p
         elif p[0] == 'N':                         return d+'/anisotropy/'+p
         elif p[0] == 'D':                         return d+'/dipole/'+p
+     
+        
+    def _get_root(self, key):
+        """
+        Returns the first root found for the specified short key, or None
+        """
+        for k in self.settings.keys():
+            s = k.split('/')
+            if s[-1] == key: return s[0]
+            
+        return None
         
     def set(self, key, value):
         """
@@ -855,9 +942,12 @@ class solver():
 
         """
         s = key.split('/')
+        
+        # If we're using a shortcut key, like 'dt'
         if len(s) == 1 and s[0] not in ['solver', 'a', 'b']:
-            if s[0] in ['dt', 'steps', 'reset']: s.insert(0,'solver')
-            else:                                s.insert(0,'a')
+            
+            # If we're in the solver group
+            s.insert(0,self._get_root(s[0]))
             key = '/'.join(s)
         
         if len(s) < 2: 
@@ -866,7 +956,7 @@ class solver():
         
         # Arrays go to the inspect plotter, values go to settings
         if type(value) == _n.ndarray: self.plot_inspect[key] = value
-        else:                         self.settings[self._elongate(key)] = value
+        else:                         self.settings[self._elongate_domain_key(key)] = value
         
         # Update plot
         self.plot_inspect.plot()
@@ -875,7 +965,15 @@ class solver():
         return self
     
     __setitem__ = set    
-
+    
+    def set_multiple(self, **kwargs):
+        """
+        Sends all keyword arguments to self.set().
+        """
+        for k in kwargs: self[k] = kwargs[k]
+    
+    __call__ = set_multiple
+    
     def get(self, key):
         """
         Returns the value (or array if available) for the specified key. Key
@@ -899,12 +997,14 @@ class solver():
         s = key.split('/')
 
         # Don't do anything for the roots
-        if len(s) < 2: return        
+        if len(s) < 2: 
+            print('WHOOPS. WHOOPS. "'+key+'" is invalid or not specific enough (forgot the domain?)')
+            return
         
         # Array value
         short_key = s[0]+'/'+s[-1]
         if short_key in self.plot_inspect.ckeys: return self.plot_inspect[short_key]
-        else:                                    return self.settings[self._elongate(key)]
+        else:                                    return self.settings[self._elongate_domain_key(key)]
     
     __getitem__ = get
     
@@ -1106,34 +1206,37 @@ class solver():
 
 if __name__ == '__main__':
     
+    #######################
+    # API Playground
+    #######################
+    
     # # Create a solver instance
-    # m = solver_api(dt=0.005, steps=870)
+    # m = solver_api()
     
     # # Set up the physical parameters
-    # m.set(By=10.0, gamma=_n.pi*2, dt=0.005, zzz=300, steps=270, alpha=0.1/_n.pi/2)
-    # m.a.set(Bys=_n.linspace(0,2,m.steps))
-    # m.set(bz0=2)
+    # m.set_multiple(By=10.0, gamma=_n.pi*2, dt=0.005, zzz=300, steps=777, alpha=0.1/_n.pi/2)
+    # m.a['By']  = _n.linspace(0,2,m.steps)
+    # m.a['bz0'] = 2
     
     # # Run it & plot.
-    # m.run().plot()
-    # m.run().plot(clear=0, t0=(m.steps-1)*m.dt)
-    # m.run().plot(clear=0, t0=(m.steps-1)*m.dt*2)
+    # m.run(True); _s.plot.xy.data(None, [m.ax, m.by], clear=0, label=['ax','by'])
+    # m.run(True); _s.plot.xy.data(None, [m.ax, m.by], clear=0, label=['ax','by'], xshift=m.steps-1, xshift_every=0)
+    # m.run(True); _s.plot.xy.data(None, [m.ax, m.by], clear=0, label=['ax','by'], xshift=2*(m.steps-1), xshift_every=0)
     
+    
+    
+    
+    
+    #############################
+    # GUI Playground
+    #############################
+
     self = solver()
-    
 
-
-    # Single-cycle switch, z-anisotropy
-    
-    # d1=150; d2=131; d3=14; 
-    # self['Tx'] = 40e9*(self.pulse(0,d1) - self.pulse(d1+d2,d1+d2+d3))
-    # self['Tz'] = 10e9*(self.pulse(d1,d1+d2))
-    # self.run()
-    
-    # n1=34; 
-    # self['Tx'] = 4e9*self.pulse(0,n1); 
-    # self['Tz'] = 1e9*self.pulse(n1,self['steps']); self.run()
-    # self.run()
+    n1=34; 
+    self['Tx'] = 4e9*self.pulse(0,n1); 
+    self['Tz'] = 1e9*self.pulse(n1,self['steps']); self.run()
+    self.run()
     
 
 

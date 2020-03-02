@@ -1,3 +1,6 @@
 #!/bin/bash
 
+# Requires that you install xcode command line tools
+# This should happen automatically when you try to run this, or you can
+# try the command 'xcode-select --install'
 gcc -shared -Wl,-install_name,engine -o engine-osx.so -fPIC engine.c
