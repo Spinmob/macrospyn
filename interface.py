@@ -14,6 +14,9 @@ if   _platform in ['win32']:  _path_dll = _os.path.join(_os.path.split(__file__)
 elif _platform in ['darwin']: _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine-osx.so')
 else:                         _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine-linux.so')
 
+if _platform == 'win32': _3d_enabled = False
+else:                    _3d_enabled = True
+
 # Get the engine.
 _engine = _c.cdll.LoadLibrary(_path_dll)
 
@@ -610,60 +613,62 @@ class solver():
         self.plot_inspect['bz'] = []
         
         # 3D plot
-        self.tab_3d = self.tabs.add_tab('3D')
-        self.button_3d_a   = self.tab_3d.place_object(_g.Button('a',   checkable=True, checked=True)) 
-        self.button_3d_b   = self.tab_3d.place_object(_g.Button('b',   checkable=True, checked=False)) 
-        self.button_3d_sum = self.tab_3d.place_object(_g.Button('Sum', checkable=True, checked=False)) 
-        self.button_plot_3d = self.tab_3d.place_object(_g.Button('Update Plot'))
-        self.tab_3d.new_autorow()
-        
-        # Make the 3D plot window
-        self._widget_3d = _gl.GLViewWidget()
-        self._widget_3d.opts['distance'] = 50
-        
-        # Make the grids
-        self._gridx_3d = _gl.GLGridItem()
-        self._gridx_3d.rotate(90,0,1,0)
-        self._gridx_3d.translate(-10,0,0)
-        self._widget_3d.addItem(self._gridx_3d)
-        self._gridy_3d = _gl.GLGridItem()
-        self._gridy_3d.rotate(90,1,0,0)
-        self._gridy_3d.translate(0,-10,0)
-        self._widget_3d.addItem(self._gridy_3d)
-        self._gridz_3d = _gl.GLGridItem()
-        self._gridz_3d.translate(0,0,-10)
-        self._widget_3d.addItem(self._gridz_3d)
-        
-        # Trajectories
-        color_a = _pg.glColor(100,100,255)
-        color_b = _pg.glColor(255,100,100)
-        color_n = _pg.glColor(50,255,255)
-        self._trajectory_a_3d   = _gl.GLLinePlotItem(color=color_a, width=2.5, antialias=True)
-        self._trajectory_b_3d   = _gl.GLLinePlotItem(color=color_b, width=2.5, antialias=True)
-        self._trajectory_sum_3d = _gl.GLLinePlotItem(color=color_n, width=2.5, antialias=True)
-        self._widget_3d.addItem(self._trajectory_a_3d)
-        self._widget_3d.addItem(self._trajectory_b_3d)
-        self._widget_3d.addItem(self._trajectory_sum_3d)
-        
-        # Other items
-        self._start_dot_a_3d   = _gl.GLScatterPlotItem(color=color_a, size=7.0, pos=_n.array([[10,0,0]]))
-        self._start_dot_b_3d   = _gl.GLScatterPlotItem(color=color_b, size=7.0, pos=_n.array([[-10,0,0]]))
-        self._start_dot_sum_3d = _gl.GLScatterPlotItem(color=color_n, size=7.0, pos=_n.array([[-10,0,0]]))
-        self._widget_3d.addItem(self._start_dot_a_3d)
-        self._widget_3d.addItem(self._start_dot_b_3d)
-        self._widget_3d.addItem(self._start_dot_sum_3d)
-        self._update_start_dots()
-        
-        # Add the 3D plot window to the tab
-        self.tab_3d.place_object(self._widget_3d, column_span=4, alignment=0)
-        self.tab_3d.set_column_stretch(3)
-        
+        if _3d_enabled:
+            self.tab_3d = self.tabs.add_tab('3D')
+            self.button_3d_a   = self.tab_3d.place_object(_g.Button('a',   checkable=True, checked=True)) 
+            self.button_3d_b   = self.tab_3d.place_object(_g.Button('b',   checkable=True, checked=False)) 
+            self.button_3d_sum = self.tab_3d.place_object(_g.Button('Sum', checkable=True, checked=False)) 
+            self.button_plot_3d = self.tab_3d.place_object(_g.Button('Update Plot'))
+            self.tab_3d.new_autorow()
+            
+            # Make the 3D plot window
+            self._widget_3d = _gl.GLViewWidget()
+            self._widget_3d.opts['distance'] = 50
+            
+            # Make the grids
+            self._gridx_3d = _gl.GLGridItem()
+            self._gridx_3d.rotate(90,0,1,0)
+            self._gridx_3d.translate(-10,0,0)
+            self._widget_3d.addItem(self._gridx_3d)
+            self._gridy_3d = _gl.GLGridItem()
+            self._gridy_3d.rotate(90,1,0,0)
+            self._gridy_3d.translate(0,-10,0)
+            self._widget_3d.addItem(self._gridy_3d)
+            self._gridz_3d = _gl.GLGridItem()
+            self._gridz_3d.translate(0,0,-10)
+            self._widget_3d.addItem(self._gridz_3d)
+            
+            # Trajectories
+            color_a = _pg.glColor(100,100,255)
+            color_b = _pg.glColor(255,100,100)
+            color_n = _pg.glColor(50,255,255)
+            self._trajectory_a_3d   = _gl.GLLinePlotItem(color=color_a, width=2.5, antialias=True)
+            self._trajectory_b_3d   = _gl.GLLinePlotItem(color=color_b, width=2.5, antialias=True)
+            self._trajectory_sum_3d = _gl.GLLinePlotItem(color=color_n, width=2.5, antialias=True)
+            self._widget_3d.addItem(self._trajectory_a_3d)
+            self._widget_3d.addItem(self._trajectory_b_3d)
+            self._widget_3d.addItem(self._trajectory_sum_3d)
+            
+            # Other items
+            self._start_dot_a_3d   = _gl.GLScatterPlotItem(color=color_a, size=7.0, pos=_n.array([[10,0,0]]))
+            self._start_dot_b_3d   = _gl.GLScatterPlotItem(color=color_b, size=7.0, pos=_n.array([[-10,0,0]]))
+            self._start_dot_sum_3d = _gl.GLScatterPlotItem(color=color_n, size=7.0, pos=_n.array([[-10,0,0]]))
+            self._widget_3d.addItem(self._start_dot_a_3d)
+            self._widget_3d.addItem(self._start_dot_b_3d)
+            self._widget_3d.addItem(self._start_dot_sum_3d)
+            self._update_start_dots()
+            
+            # Add the 3D plot window to the tab
+            self.tab_3d.place_object(self._widget_3d, column_span=4, alignment=0)
+            self.tab_3d.set_column_stretch(3)
+            
+            self.button_3d_a   .signal_clicked.connect(self._button_plot_3d_clicked)
+            self.button_3d_b   .signal_clicked.connect(self._button_plot_3d_clicked)
+            self.button_3d_sum .signal_clicked.connect(self._button_plot_3d_clicked)
+            self.button_plot_3d.signal_clicked.connect(self._button_plot_3d_clicked)
+            
         # Connect the other controls
         self.button_go     .signal_clicked.connect(self._button_go_clicked)
-        self.button_plot_3d.signal_clicked.connect(self._button_plot_3d_clicked)
-        self.button_3d_a   .signal_clicked.connect(self._button_plot_3d_clicked)
-        self.button_3d_b   .signal_clicked.connect(self._button_plot_3d_clicked)
-        self.button_3d_sum .signal_clicked.connect(self._button_plot_3d_clicked)
         
         # Transfer the solver data based on the check boxes.
         self.settings.emit_signal_changed('a/applied_field')        
@@ -683,45 +688,47 @@ class solver():
         Gets the initial condition from the settings and updates the start
         dot positions.
         """
-        ax = self.settings['a/initial_condition/x0']
-        ay = self.settings['a/initial_condition/y0']
-        az = self.settings['a/initial_condition/z0']
-        an = 1.0/_n.sqrt(ax*ax+ay*ay+az*az)
-        ax = ax*an
-        ay = ay*an
-        az = az*an
-        
-        
-        bx = self.settings['b/initial_condition/x0']
-        by = self.settings['b/initial_condition/y0']
-        bz = self.settings['b/initial_condition/z0']
-        bn = 1.0/_n.sqrt(bx*bx+by*by+bz*bz)
-        bx = bx*bn
-        by = by*bn
-        bz = bz*bn
-        
-        self._start_dot_a_3d  .setData(pos=10*_n.array([[ax, ay, az]]))
-        self._start_dot_b_3d  .setData(pos=10*_n.array([[bx, by, bz]]))
-        self._start_dot_sum_3d.setData(pos=10*_n.array([[ax+bx, ay+by, az+bz]]))
+        if _3d_enabled:
+            ax = self.settings['a/initial_condition/x0']
+            ay = self.settings['a/initial_condition/y0']
+            az = self.settings['a/initial_condition/z0']
+            an = 1.0/_n.sqrt(ax*ax+ay*ay+az*az)
+            ax = ax*an
+            ay = ay*an
+            az = az*an
+            
+            
+            bx = self.settings['b/initial_condition/x0']
+            by = self.settings['b/initial_condition/y0']
+            bz = self.settings['b/initial_condition/z0']
+            bn = 1.0/_n.sqrt(bx*bx+by*by+bz*bz)
+            bx = bx*bn
+            by = by*bn
+            bz = bz*bn
+            
+            self._start_dot_a_3d  .setData(pos=10*_n.array([[ax, ay, az]]))
+            self._start_dot_b_3d  .setData(pos=10*_n.array([[bx, by, bz]]))
+            self._start_dot_sum_3d.setData(pos=10*_n.array([[ax+bx, ay+by, az+bz]]))
 
     def _button_plot_3d_clicked(self, *a):
         """
         Plot 3d button pressed: Update the plot!
         """
-        d = self.plot_inspect
-        self._trajectory_a_3d  .setData(pos=10*_n.vstack([d['ax'],d['ay'],d['az']]).transpose())
-        self._trajectory_b_3d  .setData(pos=10*_n.vstack([d['bx'],d['by'],d['bz']]).transpose())
-        self._trajectory_sum_3d.setData(pos=10*_n.vstack([d['ax']+d['bx'],d['ay']+d['by'],d['az']+d['bz']]).transpose())
-        
-        self._trajectory_a_3d  .setVisible(self.button_3d_a  .is_checked())
-        self._trajectory_b_3d  .setVisible(self.button_3d_b  .is_checked())
-        self._trajectory_sum_3d.setVisible(self.button_3d_sum.is_checked())
-        
-        self._start_dot_a_3d  .setVisible(self.button_3d_a  .is_checked())
-        self._start_dot_b_3d  .setVisible(self.button_3d_b  .is_checked())
-        self._start_dot_sum_3d.setVisible(self.button_3d_sum.is_checked())
-        
-        self.window.process_events()
+        if _3d_enabled:
+            d = self.plot_inspect
+            self._trajectory_a_3d  .setData(pos=10*_n.vstack([d['ax'],d['ay'],d['az']]).transpose())
+            self._trajectory_b_3d  .setData(pos=10*_n.vstack([d['bx'],d['by'],d['bz']]).transpose())
+            self._trajectory_sum_3d.setData(pos=10*_n.vstack([d['ax']+d['bx'],d['ay']+d['by'],d['az']+d['bz']]).transpose())
+            
+            self._trajectory_a_3d  .setVisible(self.button_3d_a  .is_checked())
+            self._trajectory_b_3d  .setVisible(self.button_3d_b  .is_checked())
+            self._trajectory_sum_3d.setVisible(self.button_3d_sum.is_checked())
+            
+            self._start_dot_a_3d  .setVisible(self.button_3d_a  .is_checked())
+            self._start_dot_b_3d  .setVisible(self.button_3d_b  .is_checked())
+            self._start_dot_sum_3d.setVisible(self.button_3d_sum.is_checked())
+            
+            self.window.process_events()
     
     def _same_thermal_settings(self):
         """
@@ -791,11 +798,11 @@ class solver():
                 # previous thermal number, set it!
                 if  self._same_thermal_settings() and \
                 not self['reset'] and self._a_BTx is not None:
-                    Btx[0] = self._a_BTx
-                    Bty[0] = self._a_BTy
-                    Btz[0] = self._a_BTz
+                    BTx[0] = self._a_BTx
+                    BTy[0] = self._a_BTy
+                    BTz[0] = self._a_BTz
                 
-                # Now update the existing API fields
+                # Now update the existing API fields JACK
                 self.api.get
                     
         # Run it.
@@ -818,7 +825,7 @@ class solver():
         self.plot_inspect['by'] = self.api.by
         self.plot_inspect['bz'] = self.api.bz
         self.plot_inspect.plot()
-        self._button_plot_3d_clicked()
+        if _3d_enabled: self._button_plot_3d_clicked()
             
         self.window.process_events()
         
