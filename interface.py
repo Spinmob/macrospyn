@@ -1156,7 +1156,7 @@ class solver():
                          self.settings[domain+'/material/M']/u0*volume_nm3* \
                          self.settings['solver/dt']))
     
-    def thermal_field_component(self, domain='a', T_K=295.0, volume_nm3=100*100*10):
+    def thermal_field(self, domain='a', T_K=295.0, volume_nm3=100*100*10):
         """
         Returns an array of size self['steps'] containing random values drawn
         from a Gaussian distribution having standard deviation
@@ -1167,12 +1167,7 @@ class solver():
         the previous run's last thermal field values to the first value of the
         current run.
         """
-        self.gaussian_noise()*self.thermal_field_rms(domain, T_K, volume_nm3)
-    
-    def thermal_field(self, domain='a'):
-        """
-        Returns three components
-        """
+        return self.gaussian_noise()*self.thermal_field_rms(domain, T_K, volume_nm3)
     
     def spin_torque_per_mA(self, domain='a', efficiency=1.0, volume_nm3=100*100*10):
         """
@@ -1233,18 +1228,17 @@ if __name__ == '__main__':
 
     self = solver()
 
-    n1=34; 
-    self['Tx'] = 4e9*self.pulse(0,n1); 
-    self['Tz'] = 1e9*self.pulse(n1,self['steps']); self.run()
-    self.run()
-    
-
+    # # Pulse sequence
+    # n1=1000; 
+    # self['Tx'] = 4e9*self.pulse(0,n1); 
+    # self['Tz'] = 1e9*self.pulse(n1,self['steps'])
+    # self.run()
 
     # Thermal field
-
-    #self['Bx'] = self.thermal_field()
-    #self['By'] = self.thermal_field()
-    #self['Bz'] = self.thermal_field() + 0.1
+    self['Bx'] = self.thermal_field()
+    self['By'] = self.thermal_field()
+    self['Bz'] = self.thermal_field() + 0.1
+    self.run()
         
     
     
