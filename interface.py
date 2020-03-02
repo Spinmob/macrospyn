@@ -343,16 +343,23 @@ class solver_api():
         self
 
         """
+        s = key.split('/')
         
         # If it's a property of the solver, store it in the solver
         if key in self._solver_keys:
             exec('self.'+key+"=v", dict(self=self,v=value))
     
-        # Otherwise, send it to a and b.
+        # If we've specified a domain
+        elif s[0] == 'a': self.a.set(s[-1], value)
+        elif s[0] == 'b': self.b.set(s[-1], value)
+        
+        # Otherwise, if it's something that we send to both a and b.
         elif key in self.a.keys():
             self.a.set(key, value)
             self.b.set(key, value)
         
+        else: 
+            print('OOPS api.set(): Cannot find key "'+key+'"')
         return self
     
     __setitem__ = set
@@ -514,9 +521,10 @@ class solver():
         self.settings.add_parameter('a/initial_condition/y0', 1.0, tip='Initial magnetization direction (will be normalized to unit length)')
         self.settings.add_parameter('a/initial_condition/z0', 0.0, tip='Initial magnetization direction (will be normalized to unit length)')
         
-        self.settings.add_parameter('a/material/gamma', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
-        self.settings.add_parameter('a/material/M',     1.0, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
-        self.settings.add_parameter('a/material/alpha', 0.01, tip='Gilbert damping parameter')        
+        self.settings.add_parameter('a/material/gamma',      1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
+        self.settings.add_parameter('a/material/M',          1.0,  siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
+        self.settings.add_parameter('a/material/volume', 100*50*3, siPrefix=False, suffix=' nm^3', tip='Volume of domain (nm^3). Relevant only for thermal and STT.')
+        self.settings.add_parameter('a/material/alpha',      0.01, tip='Gilbert damping parameter')        
         
         self.settings.add_parameter('a/applied_field', True)
         self.settings.add_parameter('a/applied_field/Bx', 0.0, siPrefix=True, suffix='T', tip='Externally applied magnetic field')
@@ -561,6 +569,7 @@ class solver():
         
         self.settings.add_parameter('b/material/gamma', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
         self.settings.add_parameter('b/material/M',     1.0, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
+        self.settings.add_parameter('b/material/volume', 100*50*3, siPrefix=False, suffix=' nm^3', tip='Volume of domain (nm^3). Relevant only for thermal and STT.')
         self.settings.add_parameter('b/material/alpha', 0.01, tip='Gilbert damping parameter')        
         
         self.settings.add_parameter('b/applied_field', True)
@@ -604,13 +613,8 @@ class solver():
         # Inspection plot for all arrays
         self.tab_inspect  = self.tabs.add_tab('Inspect')
         self.plot_inspect = self.tab_inspect.place_object(_g.DataboxPlot(autoscript=5, autosettings_path='solver.plot_inspect.txt'), alignment=0)
-        self.plot_inspect['t']  = []
-        self.plot_inspect['ax'] = []
-        self.plot_inspect['ay'] = []
-        self.plot_inspect['az'] = []
-        self.plot_inspect['bx'] = []
-        self.plot_inspect['by'] = []
-        self.plot_inspect['bz'] = []
+        self.initialize_plot_inspect()
+        self.plot_inspect.after_clear = self.initialize_plot_inspect
         
         # 3D plot
         if _3d_enabled:
@@ -682,6 +686,20 @@ class solver():
         
         # Let's have a look!
         self.window.show()
+
+    def initialize_plot_inspect(self):
+        """
+        Clears the Inspect plot and populates it with empty arrays.
+        """
+        self.plot_inspect.clear()
+        self.plot_inspect['t']  = []
+        self.plot_inspect['ax'] = []
+        self.plot_inspect['ay'] = []
+        self.plot_inspect['az'] = []
+        self.plot_inspect['bx'] = []
+        self.plot_inspect['by'] = []
+        self.plot_inspect['bz'] = []
+        
 
     def _update_start_dots(self):
         """
@@ -756,7 +774,7 @@ class solver():
             self.label_iteration.set_text(str(n+1))
             self.run(self.settings['solver/reset'])
             
-              
+            
     def run(self, reset=False):
         """
         Run the specified simulation.
@@ -774,12 +792,12 @@ class solver():
         -------
         self
         """
-        # Clear the domain arrays
+        # Clear the api arrays, and transfer all the values from the 
+        # TreeDictionary to the engine (API). This skips non-api entries 
+        # like 'solver', 'a', 'b', and 'solver/T', and will transfer arrays
+        # like 'a/Bx' if they exist in the plot_inspect.
         self.api.a.clear_arrays()
         self.api.b.clear_arrays()
-        
-        # Transfer all the values from the TreeDictionary to the api
-        # This skips non-api entries like 'solver', 'a', 'b', and 'solver/T'
         self._transfer_all_to_api()
         
         # If we have a Langevin field, add it in.
@@ -789,9 +807,9 @@ class solver():
             if self['a/mode']:
                 
                 # Generate new langevin field arrays
-                BTx = self.thermal_field('a', self['T'], self['a/volume']*1e27)
-                BTy = self.thermal_field('a', self['T'], self['a/volume']*1e27)
-                BTz = self.thermal_field('a', self['T'], self['a/volume']*1e27)
+                BTx = self.thermal_field('a', self['T'], self['a/volume']*1e-27)
+                BTy = self.thermal_field('a', self['T'], self['a/volume']*1e-27)
+                BTz = self.thermal_field('a', self['T'], self['a/volume']*1e-27)
                 
                 # If thermal field-relevant parameters are the same
                 # and we're doing a continuous simulation, and we have
@@ -802,8 +820,10 @@ class solver():
                     BTy[0] = self._a_BTy
                     BTz[0] = self._a_BTz
                 
-                # Now update the existing API fields JACK
-                self.api.get
+                # Now add the thermal field to the existing field.
+                self.api['a/Bx'] += BTx
+                self.api['a/By'] += BTy
+                self.api['a/Bz'] += BTz
                     
         # Run it.
         self.api.run(not self.settings['solver/reset'])
@@ -900,20 +920,17 @@ class solver():
     def _elongate_domain_key(self, key):
         """
         Returns a key that is the long form (inserting any sub-headings) to 
-        make it work on settings.
+        make it work on settings. Assumes it's of the form 'a/something' or
+        'b/something'
         """
-        s = key.split('/')
-        if len(s) < 2: return key
+        split = key.split('/')
         
-        d = s[0]
-        p = s[-1]
-        if   p in ['x0','y0','z0']     :          return d+'/initial_condition/'+p
-        elif p in ['gamma','M','alpha']:          return d+'/material/'+p
-        elif p in ['Bx', 'By', 'Bz']   :          return d+'/applied_field/'+p
-        elif p in ['X', 'STT', 'Tx', 'Ty', 'Tz']: return d+'/other_torques/'+p
-        elif p[0] == 'N':                         return d+'/anisotropy/'+p
-        elif p[0] == 'D':                         return d+'/dipole/'+p
-     
+        for k in self.settings.keys():
+            s = k.split('/')
+            if s[0] == split[0] and s[-1] == split[-1]: return k
+        
+        print('UH OH, could not elongate "'+key+'"')
+        return key
         
     def _get_root(self, key):
         """
@@ -953,17 +970,23 @@ class solver():
         # If we're using a shortcut key, like 'dt'
         if len(s) == 1 and s[0] not in ['solver', 'a', 'b']:
             
-            # If we're in the solver group
+            # Insert the first root we find, if it's simple.
             s.insert(0,self._get_root(s[0]))
             key = '/'.join(s)
         
+        # By this stage it better be length 2 or we're hosed.
         if len(s) < 2: 
             print('ERROR: Cannot set', key)
             return
         
         # Arrays go to the inspect plotter, values go to settings
-        if type(value) == _n.ndarray: self.plot_inspect[key] = value
-        else:                         self.settings[self._elongate_domain_key(key)] = value
+        if type(value) == _n.ndarray: 
+            s = key.split('/')
+            self.plot_inspect[s[0]+'/'+s[-1]] = value
+        
+        # Otherwise it's just a value. Update the tree.
+        else:                 
+            self.settings[self._elongate_domain_key(key)] = value
         
         # Update plot
         self.plot_inspect.plot()
@@ -1011,7 +1034,7 @@ class solver():
         # Array value
         short_key = s[0]+'/'+s[-1]
         if short_key in self.plot_inspect.ckeys: return self.plot_inspect[short_key]
-        else:                                    return self.settings[self._elongate_domain_key(key)]
+        else: return self.settings[self._elongate_domain_key(key)]
     
     __getitem__ = get
     
@@ -1242,9 +1265,7 @@ if __name__ == '__main__':
     # self.run()
 
     # Thermal field
-    self['Bx'] = self.thermal_field()
-    self['By'] = self.thermal_field()
-    self['Bz'] = self.thermal_field() + 0.1
+    self['T'] = 295.0
     self.run()
         
     
