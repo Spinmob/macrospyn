@@ -213,7 +213,7 @@ void log_step(domain *a, domain *b, int n) {
 // SOLVER
 ///////////////////////////////////
 
-int solve_heun(domain *a, domain *b, double dt, int N) {
+void solve_heun(domain *a, domain *b, double dt, int N) {
  
   long t0 = time(0);
 
