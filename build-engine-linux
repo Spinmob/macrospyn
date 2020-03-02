@@ -1,3 +1,0 @@
-#!/bin/bash
-
-gcc -shared -Wl,-soname,engine -o engine.so -fPIC engine.c
