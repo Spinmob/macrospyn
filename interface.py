@@ -1,12 +1,13 @@
-import ctypes  as _c
-import numpy   as _n
-import os      as _os
-import spinmob as _s
-import spinmob.egg as _egg; _g = _egg.gui
-import pyqtgraph.opengl as _gl
-import pyqtgraph        as _pg
+import ctypes            as _c
+import numpy             as _n
+import os                as _os
+import spinmob           as _s
+import spinmob.egg       as _egg; _g = _egg.gui
+import pyqtgraph.opengl  as _gl
+import pyqtgraph         as _pg
 from sys import platform as _platform
-import traceback as _t
+import traceback         as _t
+import time              as _time
 _p = _t.print_last
 
 # Find the path to the compiled c-code (only Windows and Linux supported so far.)
@@ -14,6 +15,7 @@ if   _platform in ['win32']:  _path_dll = _os.path.join(_os.path.split(__file__)
 elif _platform in ['darwin']: _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine-osx.so')
 else:                         _path_dll = _os.path.join(_os.path.split(__file__)[0],'engine-linux.so')
 
+# Windows currently can't handle the 3d plots for some reason.
 if _platform == 'win32': _3d_enabled = False
 else:                    _3d_enabled = True
 
@@ -144,7 +146,7 @@ class _domain(_c.Structure):
         """
         Returns a list of keys that can be used in set() or get().
         """
-        return ['gamma', 'M', 'alpha', 'X', 'STT',
+        return ['x0', 'y0', 'z0', 'gamma', 'M', 'alpha', 'X', 'STT',
                 'Tx', 'Ty', 'Tz', 'Bx', 'By', 'Bz',
                 'Nxx', 'Nxy', 'Nxz', 'Nyx', 'Nyy', 'Nyz', 'Nzx', 'Nzy', 'Nzz']
     
@@ -359,7 +361,7 @@ class solver_api():
             self.b.set(key, value)
         
         else: 
-            print('OOPS api.set(): Cannot find key "'+key+'"')
+            print('OOPS solver_api.set(): Cannot find key "'+key+'"')
         return self
     
     __setitem__ = set
@@ -403,13 +405,13 @@ class solver_api():
     
     __getitem__ = get
     
-    def run(self, update_initial_condition=False):
+    def run(self, continuous_mode=False):
         """
         Creates the solution arrays and runs the solver to fill them up.
         Afterward, the initial conditions are (by default) set to the 
         last value of the solution arrays.
         
-        NOTE: BE CAREFUL about update_initial_condition=True. This will ONLY
+        NOTE: BE CAREFUL about continuous_mode=True. This will ONLY
         transfer the 6 magnetization components, not the other arrays you have
         specified. For example, if you're using a Langevin (randomly fluctuating)
         field, you will need to transfer the last element of the field arrays to 
@@ -419,43 +421,62 @@ class solver_api():
         
         Parameters
         ----------
-        update_initial_condition=True
+        continuous_mode=True
             If True, the initial conditions (self.a.x0, self.b.x0, ...) will be
             set to the last value of the solution arrays. SEE ABOVE NOTE.
         """
         self.steps = int(self.steps)
         
-        # Create the solution arrays
-        self.ax = _n.zeros(self.steps); self.ax[0] = self.a.x0
-        self.ay = _n.zeros(self.steps); self.ay[0] = self.a.y0
-        self.az = _n.zeros(self.steps); self.az[0] = self.a.z0
-        self.bx = _n.zeros(self.steps); self.bx[0] = self.b.x0
-        self.by = _n.zeros(self.steps); self.by[0] = self.b.y0
-        self.bz = _n.zeros(self.steps); self.bz[0] = self.b.z0
+        # Create the solution arrays if we need to
+        if not type(self.ax) == _n.ndarray or not len(self.ax) == self.steps:
+            self.ax = _n.zeros(self.steps); self.ax[0] = self.a.x0
+            self.ay = _n.zeros(self.steps); self.ay[0] = self.a.y0
+            self.az = _n.zeros(self.steps); self.az[0] = self.a.z0
+            self.bx = _n.zeros(self.steps); self.bx[0] = self.b.x0
+            self.by = _n.zeros(self.steps); self.by[0] = self.b.y0
+            self.bz = _n.zeros(self.steps); self.bz[0] = self.b.z0
         
-        # Provide the c-code with access to the array data
-        self.a._x = _to_pointer(self.ax)
-        self.a._y = _to_pointer(self.ay)
-        self.a._z = _to_pointer(self.az)
-        self.b._x = _to_pointer(self.bx)
-        self.b._y = _to_pointer(self.by)
-        self.b._z = _to_pointer(self.bz)
+            # Provide the c-code with access to the array data
+            self.a._x = _to_pointer(self.ax)
+            self.a._y = _to_pointer(self.ay)
+            self.a._z = _to_pointer(self.az)
+            self.b._x = _to_pointer(self.bx)
+            self.b._y = _to_pointer(self.by)
+            self.b._z = _to_pointer(self.bz)
         
+        # Set the initial condition
+        self.ax[0] = self.a.x0
+        self.ay[0] = self.a.y0
+        self.az[0] = self.a.z0
+        self.bx[0] = self.b.x0
+        self.by[0] = self.b.y0
+        self.bz[0] = self.b.z0
+            
         # Solve it.
         _engine.solve_heun.restype = None
         _engine.solve_heun(_c.byref(self.a), _c.byref(self.b), 
                            _c.c_double(self.dt), _c.c_int(self.steps))
         
         # Set the initial conditions for the next run
-        if update_initial_condition:
-
+        if continuous_mode:
+            
             self.a.x0 = self.ax[-1]
             self.a.y0 = self.ay[-1]
             self.a.z0 = self.az[-1]
             self.b.x0 = self.bx[-1]
             self.b.y0 = self.by[-1]
             self.b.z0 = self.bz[-1]
-        
+            
+            # Really large exponents seem to slow this thing way down!
+            # I think 100 digits of precision is a bit too much, but...
+            roundoff = 1e-200
+            if abs(self.a.x0) < roundoff: self.a.x0 = 0.0
+            if abs(self.a.y0) < roundoff: self.a.y0 = 0.0
+            if abs(self.a.z0) < roundoff: self.a.z0 = 0.0
+            if abs(self.b.x0) < roundoff: self.b.x0 = 0.0
+            if abs(self.b.y0) < roundoff: self.b.y0 = 0.0
+            if abs(self.b.z0) < roundoff: self.b.z0 = 0.0
+            
         return self
 
 
@@ -468,8 +489,17 @@ class solver():
     
     def __init__(self):
         
+        # For benchmarking
+        self._t0  = 0
+        self._t05 = 0.5
+        self._t1  = 1
+        self._t2  = 2
+        self._t3  = 3
+        
         # Solver application programming interface.
-        self.api = solver_api()
+        self.engine = solver_api()
+        self.a = self.engine.a
+        self.b = self.engine.b
         
         # Previous values for the thermal field
         self._a_BTx = None
@@ -499,8 +529,7 @@ class solver():
         
         # Top row controls for the "go" button, etc
         self.grid_top          = self.window  .place_object(_g.GridLayout(False), alignment=1) 
-        self.button_go         = self.grid_top.place_object(_g.Button('Go!'))
-        self.number_iterations = self.grid_top.place_object(_g.NumberBox(1, bounds=(0,None), int=True))
+        self.button_go         = self.grid_top.place_object(_g.Button('Go!', True))
         self.label_iteration   = self.grid_top.place_object(_g.Label(''))
         
         # Bottom row controls for settings and plots.
@@ -510,10 +539,11 @@ class solver():
         # Settings
         self.settings     = self.grid_bottom.place_object(_g.TreeDictionary(autosettings_path='solver.settings.txt'))
         
+        self.settings.add_parameter('solver/iterations', 0, limits=(0,None))
         self.settings.add_parameter('solver/dt',    1e-12, dec=True,                  siPrefix=True, suffix='s')
         self.settings.add_parameter('solver/steps', 5000,  dec=True, limits=(2,None), siPrefix=True, suffix='steps')
-        self.settings.add_parameter('solver/T',      0.0,  limits=(0,None),           siPrefix=True, suffix='K')
-        self.settings.add_parameter('solver/reset', True)
+        self.settings.add_parameter('solver/T',      0.0,  limits=(0,None), step=10,  siPrefix=True, suffix='K')
+        self.settings.add_parameter('solver/continuous', True)
         
         self.settings.add_parameter('a/mode', 1, limits=(0,1), tip='0=disabled, 1=LLG')
         
@@ -523,7 +553,7 @@ class solver():
         
         self.settings.add_parameter('a/material/gamma',      1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
         self.settings.add_parameter('a/material/M',          1.0,  siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
-        self.settings.add_parameter('a/material/volume', 100*50*3, siPrefix=False, suffix=' nm^3', tip='Volume of domain (nm^3). Relevant only for thermal and STT.')
+        self.settings.add_parameter('a/material/volume', 100*50*3, bounds=(1e-3, None), siPrefix=False, suffix=' nm^3', tip='Volume of domain (nm^3). Relevant only for thermal and STT.')
         self.settings.add_parameter('a/material/alpha',      0.01, tip='Gilbert damping parameter')        
         
         self.settings.add_parameter('a/applied_field', True)
@@ -569,7 +599,7 @@ class solver():
         
         self.settings.add_parameter('b/material/gamma', 1.760859644e11, siPrefix=True, suffix='rad/(s*T)', tip='Magnitude of gyromagnetic ratio')
         self.settings.add_parameter('b/material/M',     1.0, siPrefix=True, suffix='T', tip='Saturation magnetization (u0*Ms)')
-        self.settings.add_parameter('b/material/volume', 100*50*3, siPrefix=False, suffix=' nm^3', tip='Volume of domain (nm^3). Relevant only for thermal and STT.')
+        self.settings.add_parameter('b/material/volume', 100*50*3, bounds=(1e-3, None), siPrefix=False, suffix=' nm^3', tip='Volume of domain (nm^3). Relevant only for thermal and STT.')
         self.settings.add_parameter('b/material/alpha', 0.01, tip='Gilbert damping parameter')        
         
         self.settings.add_parameter('b/applied_field', True)
@@ -770,92 +800,146 @@ class solver():
         Go button pressed: Run the simulation!
         """
 
-        for n in range(self.number_iterations.get_value()):
-            self.label_iteration.set_text(str(n+1))
-            self.run(self.settings['solver/reset'])
+        n = 0
+        N = self['iterations']
+        while (n < N or N < 1) and self.button_go.is_checked():
             
+            # End time of previous run
+            old_t3 = self._t3
             
-    def run(self, reset=False):
+            # Update the user and run it.
+            self.run()
+            
+            # Provide some user information
+            self.label_iteration.set_text(
+                'Iteration ' + str(n+1) + 
+                ': Duty Cycle = %.2f, %.3f seconds/iteration' % 
+                ( (self._t2-self._t05)/(self._t3-old_t3), self._t3-old_t3 ))
+            n += 1
+        
+        self.button_go.set_checked(False)
+            
+    def run(self):
         """
         Run the specified simulation.
         
-        IMPORTANT: See self.api.run()'s documentation for a concern about 
-        setting reset=True.
+        IMPORTANT: See self.engine.run()'s documentation for a concern about 
+        setting continuous=True.
         
-        Parameters
-        ----------
-        reset=False
-            After the run, update the initial conditions to match the 
-            last point calculated. 
-            
         Returns
         -------
         self
         """
-        # Clear the api arrays, and transfer all the values from the 
-        # TreeDictionary to the engine (API). This skips non-api entries 
+        self._t0 = _time.time()
+        
+        # Clear the engine arrays, and transfer all the values from the 
+        # TreeDictionary to the engine (API). This skips non-engine entries 
         # like 'solver', 'a', 'b', and 'solver/T', and will transfer arrays
         # like 'a/Bx' if they exist in the plot_inspect.
-        self.api.a.clear_arrays()
-        self.api.b.clear_arrays()
+        self.engine.a.clear_arrays()
+        self.engine.b.clear_arrays()
         self._transfer_all_to_api()
         
-        # If we have a Langevin field, add it in.
-        if self['T'] > 0:
+        self._t05 = _time.time()
+        
+        # If we have a Langevin field, calculate and add it in.
+        thermal_enabled = self['T'] > 0
+        if thermal_enabled:
             
             # If domain a is enabled
             if self['a/mode']:
                 
                 # Generate new langevin field arrays
-                BTx = self.thermal_field('a', self['T'], self['a/volume']*1e-27)
-                BTy = self.thermal_field('a', self['T'], self['a/volume']*1e-27)
-                BTz = self.thermal_field('a', self['T'], self['a/volume']*1e-27)
+                aBTx = self.thermal_field('a', self['T'], self['a/volume']*1e-27)
+                aBTy = self.thermal_field('a', self['T'], self['a/volume']*1e-27)
+                aBTz = self.thermal_field('a', self['T'], self['a/volume']*1e-27)
                 
                 # If thermal field-relevant parameters are the same
                 # and we're doing a continuous simulation, and we have
                 # previous thermal number, set it!
                 if  self._same_thermal_settings() and \
-                not self['reset'] and self._a_BTx is not None:
-                    BTx[0] = self._a_BTx
-                    BTy[0] = self._a_BTy
-                    BTz[0] = self._a_BTz
+                    self['continous'] and self._a_BTx is not None:
+                    aBTx[0] = self._a_BTx
+                    aBTy[0] = self._a_BTy
+                    aBTz[0] = self._a_BTz
                 
                 # Now add the thermal field to the existing field.
-                self.api['a/Bx'] += BTx
-                self.api['a/By'] += BTy
-                self.api['a/Bz'] += BTz
-                    
-        # Run it.
-        self.api.run(not self.settings['solver/reset'])
+                self.engine['a/Bx'] += aBTx
+                self.engine['a/By'] += aBTy
+                self.engine['a/Bz'] += aBTz
+            
+            # If domain b is enabled
+            if self['b/mode']:
+                
+                # Generate new langevin field arrays
+                bBTx = self.thermal_field('b', self['T'], self['b/volume']*1e-27)
+                bBTy = self.thermal_field('b', self['T'], self['b/volume']*1e-27)
+                bBTz = self.thermal_field('b', self['T'], self['b/volume']*1e-27)
+                
+                # If thermal field-relevant parameters are the same
+                # and we're doing a continuous simulation, and we have
+                # previous thermal number, set it!
+                if  self._same_thermal_settings() and \
+                    self['continuous'] and self._b_BTx is not None:
+                    bBTx[0] = self._b_BTx
+                    bBTy[0] = self._b_BTy
+                    bBTz[0] = self._b_BTz
+                
+                # Now add the thermal field to the existing field.
+                self.engine['b/Bx'] += bBTx
+                self.engine['b/By'] += bBTy
+                self.engine['b/Bz'] += bBTz
         
-        # Transfer to the initial condition
-        self.settings['a/initial_condition/x0'] = self.api.a.x0
-        self.settings['a/initial_condition/y0'] = self.api.a.y0
-        self.settings['a/initial_condition/z0'] = self.api.a.z0
-        self.settings['b/initial_condition/x0'] = self.api.b.x0
-        self.settings['b/initial_condition/y0'] = self.api.b.y0
-        self.settings['b/initial_condition/z0'] = self.api.b.z0
+        self._t1 = _time.time()
+        
+        # Run it.
+        self.engine.run(self['continuous'])
+        
+        self._t2 = _time.time()
+        
+        # If we're not resetting (continuous mode), keep track of the last
+        # thermal field component. 
+        if thermal_enabled:
+            self._a_BTx = aBTx[-1]
+            self._a_BTy = aBTy[-1]
+            self._a_BTz = aBTz[-1]
+            self._b_BTx = bBTx[-1]
+            self._b_BTy = bBTy[-1]
+            self._b_BTz = bBTz[-1]
+            
+        # Otherwise, None those things out so we know not to mess with them
+        else:
+            self._a_BTx = None
+            self._a_BTy = None
+            self._a_BTz = None
+            self._b_BTx = None
+            self._b_BTy = None
+            self._b_BTz = None
+        
+        # Transfer to the initial condition from the solver to the tree
+        self.settings['a/initial_condition/x0'] = self.engine.a.x0
+        self.settings['a/initial_condition/y0'] = self.engine.a.y0
+        self.settings['a/initial_condition/z0'] = self.engine.a.z0
+        self.settings['b/initial_condition/x0'] = self.engine.b.x0
+        self.settings['b/initial_condition/y0'] = self.engine.b.y0
+        self.settings['b/initial_condition/z0'] = self.engine.b.z0
         
         # Transfer the results to the inspector
-        self.plot_inspect['t']  = self.api.dt*_n.array(range(self.api.steps))
-        self.plot_inspect['ax'] = self.api.ax
-        self.plot_inspect['ay'] = self.api.ay
-        self.plot_inspect['az'] = self.api.az
-        self.plot_inspect['bx'] = self.api.bx
-        self.plot_inspect['by'] = self.api.by
-        self.plot_inspect['bz'] = self.api.bz
+        self.plot_inspect['t']  = self.engine.dt*_n.array(range(self.engine.steps))
+        self.plot_inspect['ax'] = self.engine.ax
+        self.plot_inspect['ay'] = self.engine.ay
+        self.plot_inspect['az'] = self.engine.az
+        self.plot_inspect['bx'] = self.engine.bx
+        self.plot_inspect['by'] = self.engine.by
+        self.plot_inspect['bz'] = self.engine.bz
         self.plot_inspect.plot()
         if _3d_enabled: self._button_plot_3d_clicked()
             
         self.window.process_events()
         
+        self._t3 = _time.time()
+        
         return self
-
-    def _transfer_all_to_api(self):
-        """
-        Loops over the settings keys and transfers them to the api.
-        """
-        for key in self.settings.keys(): self._transfer(key)
 
     def _api_key_exists(self, key):
         """
@@ -867,33 +951,27 @@ class solver():
         if len(s) == 1: return False
         
         # Solver parameters
-        if s[-1] in self.api._solver_keys: return True
+        if s[-1] in self.engine._solver_keys: return True
         
         # Domain parameters
-        return s[-1] in self.api.a.keys()
+        return s[-1] in self.engine.a.keys()
         
 
     def _transfer(self, key):
         """
         Transfers the domain's parameter to the solver data.
         """
-        # Ignore some keys that aren't in the api (defined above)
-        if not self._api_key_exists(key): return        
         
+        # Ignore some keys that aren't in the engine (defined above)
+        if not self._api_key_exists(key): return        
+                
         # s[0] is the domain, s[-1] is the parameter name
         s = key.split('/')
 
-        # Array value
+        # Array values from the plotter, normal values from dictionary
         short_key = s[0]+'/'+s[-1]
         if short_key in self.plot_inspect.ckeys: 
-            
-            # Use the array from the databox plotter
-            value = self.plot_inspect[short_key]
-            
-            # Pluralize the variable name.
-            s[-1] = s[-1]+'s'
-                    
-        # Normal value
+              value = self.plot_inspect[short_key]    
         else: value = self.settings[key]
         
         # If it's under an unchecked category, zero it.
@@ -906,17 +984,23 @@ class solver():
             # Unchecked category.
             elif not self.settings[s[0]+'/'+s[1]]: value = 0
                 
-        # Come up with the command for sending the parameter to the api
-        if s[0]=='solver': command =            'self.api.set_multiple('+s[-1]+'= value)'
-        else:              command = 'self.api.'+s[0]+  '.set_multiple('+s[-1]+'= value)'   
+        # Come up with the command for sending the parameter to the engine
+        if s[0]=='solver': command =            'self.engine.set_multiple('+s[-1]+'= value)'
+        else:              command = 'self.engine.'+s[0]+  '.set_multiple('+s[-1]+'= value)'   
         
         # Try it!
         try:    exec(command, dict(self=self, value=value))
         except: print('FAIL: "'+command+'"')
+    
+    def _transfer_all_to_api(self):
+        """
+        Loops over the settings keys and transfers them to the engine.
+        """
+        for key in self.settings.keys(): self._transfer(key)
         
         # Update the start dots in the 3D plot
         self._update_start_dots()
-    
+
     def _elongate_domain_key(self, key):
         """
         Returns a key that is the long form (inserting any sub-headings) to 
@@ -1021,7 +1105,7 @@ class solver():
 
         """
         # For solver settings, return them with simple keys
-        if key in ['dt', 'steps', 'reset', 'T']: return self.settings['solver/'+key]
+        if key in ['dt', 'steps', 'continuous', 'T', 'iterations']: return self.settings['solver/'+key]
         
         # s[0] is the domain, s[-1] is the parameter name
         s = key.split('/')
@@ -1265,8 +1349,9 @@ if __name__ == '__main__':
     # self.run()
 
     # Thermal field
-    self['T'] = 295.0
-    self.run()
+    self['T'] = 0
+    self['a/y0'] = 1
+    self.button_go.click()
         
     
     
