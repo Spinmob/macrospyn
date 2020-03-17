@@ -1,4 +1,1 @@
-from . import interface as _interface
-
-solver_api = _interface.solver_api
-solver     = _interface.solver
+from .solver import solver, solver_api
